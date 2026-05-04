@@ -2,6 +2,8 @@
 
 This repository contains data-processing utilities and model baselines for the COSILab pipeline. Each major component has its own README with operational details.
 
+![INGroup workflow](assets/ingroup_workflow_v2.png)
+
 ## Components
 
 ### BadgeFramework
