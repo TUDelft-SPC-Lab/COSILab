@@ -1,0 +1,388 @@
+"""
+Utility functions for SAM 3D Body demo notebook
+"""
+
+import os
+from typing import Any, Dict, List, Optional
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from sam_3d_body import load_sam_3d_body_hf, SAM3DBodyEstimator
+from sam_3d_body.metadata.mhr70 import pose_info as mhr70_pose_info
+from sam_3d_body.visualization.renderer import Renderer
+from sam_3d_body.visualization.skeleton_visualizer import SkeletonVisualizer
+
+from utils.painter import color_list
+
+from PIL import Image
+
+LIGHT_BLUE = (0.65098039, 0.74117647, 0.85882353)
+
+
+def setup_sam_3d_body(
+    hf_repo_id: str = "facebook/sam-3d-body-vith",
+    detector_name: str = "vitdet",
+    segmentor_name: str = "sam2",
+    fov_name: str = "moge2",
+    detector_path: str = "",
+    segmentor_path: str = "",
+    fov_path: str = "",
+    device: str = "cuda",
+):
+    """
+    Set up SAM 3D Body estimator with optional components.
+
+    Args:
+        hf_repo_id: HuggingFace repository ID for the model
+        detector_name: Name of detector to use (default: "vitdet")
+        segmentor_name: Name of segmentor to use (default: "sam2")
+        fov_name: Name of FOV estimator to use (default: "moge2")
+        detector_path: URL or path for human detector model
+        segmentor_path: Path to human segmentor model (optional)
+        fov_path: path for FOV estimator
+        device: Device to use (default: auto-detect cuda/cpu)
+
+    Returns:
+        estimator: SAM3DBodyEstimator instance ready for inference
+    """
+    print(f"Loading SAM 3D Body model from {hf_repo_id}...")
+
+    # Auto-detect device if not specified
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Load core model from HuggingFace
+    model, model_cfg = load_sam_3d_body_hf(hf_repo_id, device=device)
+
+    # Initialize optional components
+    human_detector, human_segmentor, fov_estimator = None, None, None
+
+    if detector_name:
+        print(f"Loading human detector from {detector_name}...")
+        from tools.build_detector import HumanDetector
+
+        human_detector = HumanDetector(name=detector_name, device=device)
+
+    if segmentor_path:
+        print(f"Loading human segmentor from {segmentor_path}...")
+        from tools.build_sam import HumanSegmentor
+
+        human_segmentor = HumanSegmentor(
+            name=segmentor_name, device=device, path=segmentor_path
+        )
+
+    if fov_name:
+        print(f"Loading FOV estimator from {fov_name}...")
+        from tools.build_fov_estimator import FOVEstimator
+
+        fov_estimator = FOVEstimator(name=fov_name, device=device)
+
+    # Create estimator wrapper
+    estimator = SAM3DBodyEstimator(
+        sam_3d_body_model=model,
+        model_cfg=model_cfg,
+        human_detector=human_detector,
+        human_segmentor=human_segmentor,
+        fov_estimator=fov_estimator,
+    )
+
+    print(f"Setup complete!")
+    print(
+        f"  Human detector: {'✓' if human_detector else '✗ (will use full image or manual bbox)'}"
+    )
+    print(
+        f"  Human segmentor: {'✓' if human_segmentor else '✗ (mask inference disabled)'}"
+    )
+    print(f"  FOV estimator: {'✓' if fov_estimator else '✗ (will use default FOV)'}")
+
+    return estimator
+
+
+def setup_visualizer():
+    """Set up skeleton visualizer with MHR70 pose info"""
+    visualizer = SkeletonVisualizer(line_width=2, radius=5)
+    visualizer.set_pose_meta(mhr70_pose_info)
+    return visualizer
+
+
+def visualize_2d_results(
+    img_cv2: np.ndarray, outputs: List[Dict[str, Any]], visualizer: SkeletonVisualizer
+) -> List[np.ndarray]:
+    """Visualize 2D keypoints and bounding boxes"""
+    results = []
+
+    for pid, person_output in enumerate(outputs):
+        img_vis = img_cv2.copy()
+
+        # Draw keypoints
+        keypoints_2d = person_output["pred_keypoints_2d"]
+        keypoints_2d_vis = np.concatenate(
+            [keypoints_2d, np.ones((keypoints_2d.shape[0], 1))], axis=-1
+        )
+        img_vis = visualizer.draw_skeleton(img_vis, keypoints_2d_vis)
+
+        # Draw bounding box
+        bbox = person_output["bbox"]
+        img_vis = cv2.rectangle(
+            img_vis,
+            (int(bbox[0]), int(bbox[1])),
+            (int(bbox[2]), int(bbox[3])),
+            (0, 255, 0),  # Green color
+            2,
+        )
+
+        # Add person ID text
+        cv2.putText(
+            img_vis,
+            f"Person {pid}",
+            (int(bbox[0]), int(bbox[1] - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2,
+        )
+
+        results.append(img_vis)
+
+    return results
+
+
+def visualize_3d_mesh(
+    img_cv2: np.ndarray, outputs: List[Dict[str, Any]], faces: np.ndarray
+) -> List[np.ndarray]:
+    """Visualize 3D mesh overlaid on image and side view"""
+    results = []
+
+    for pid, person_output in enumerate(outputs):
+        # Create renderer for this person
+        renderer = Renderer(focal_length=person_output["focal_length"], faces=faces)
+
+        # 1. Original image
+        img_orig = img_cv2.copy()
+
+        # 2. Mesh overlay on original image
+        img_mesh_overlay = (
+            renderer(
+                person_output["pred_vertices"],
+                person_output["pred_cam_t"],
+                img_cv2.copy(),
+                mesh_base_color=LIGHT_BLUE,
+                scene_bg_color=(1, 1, 1),
+            )
+            * 255
+        ).astype(np.uint8)
+
+        # 3. Mesh on white background (front view)
+        white_img = np.ones_like(img_cv2) * 255
+        img_mesh_white = (
+            renderer(
+                person_output["pred_vertices"],
+                person_output["pred_cam_t"],
+                white_img,
+                mesh_base_color=LIGHT_BLUE,
+                scene_bg_color=(1, 1, 1),
+            )
+            * 255
+        ).astype(np.uint8)
+
+        # 4. Side view
+        img_mesh_side = (
+            renderer(
+                person_output["pred_vertices"],
+                person_output["pred_cam_t"],
+                white_img.copy(),
+                mesh_base_color=LIGHT_BLUE,
+                scene_bg_color=(1, 1, 1),
+                side_view=True,
+            )
+            * 255
+        ).astype(np.uint8)
+
+        # Combine all views
+        combined = np.concatenate(
+            [img_orig, img_mesh_overlay, img_mesh_white, img_mesh_side], axis=1
+        )
+        results.append(combined)
+
+    return results
+
+
+def save_mesh_results(
+    outputs: List[Dict[str, Any]],
+    faces: np.ndarray,
+    save_dir: str,
+    image_path: str,
+    id_current: List,
+):
+    """Save 3D mesh results to files and return PLY file paths"""
+
+    if outputs is None:
+        return
+
+    os.makedirs(save_dir, exist_ok=True)
+    for pid, person_output in enumerate(outputs):
+        # Create renderer for this person
+        renderer = Renderer(focal_length=person_output["focal_length"], faces=faces)
+
+        # Store individual mesh
+        # Prefer saving by tracked object id (mask id), not by per-frame index.
+        # This keeps output folders stable across frames (e.g., 2/4/6/8).
+        obj_id = None
+        if id_current is not None and pid < len(id_current):
+            obj_id = int(id_current[pid])
+        else:
+            obj_id = int(pid + 1)
+
+        color = tuple(c / 255.0 for c in color_list[obj_id + 4])
+        tmesh = renderer.vertices_to_trimesh(
+            person_output["pred_vertices"], person_output["pred_cam_t"], color
+        )
+        person_dir = os.path.join(save_dir, str(obj_id))
+        os.makedirs(person_dir, exist_ok=True)
+        mesh_path = os.path.join(person_dir, f"{os.path.basename(image_path)[:-4]}.ply")
+        tmesh.export(mesh_path)
+
+
+def display_results_grid(
+    images: List[np.ndarray], titles: List[str], figsize_per_image: tuple = (6, 6)
+):
+    """Display multiple images in a grid"""
+    n_images = len(images)
+    if n_images == 0:
+        print("No images to display")
+        return
+
+    # Calculate grid dimensions
+    cols = min(3, n_images)  # Max 3 columns
+    rows = (n_images + cols - 1) // cols
+
+    fig, axes = plt.subplots(
+        rows, cols, figsize=(figsize_per_image[0] * cols, figsize_per_image[1] * rows)
+    )
+
+    # Handle single image case
+    if n_images == 1:
+        axes = [axes]
+    elif rows == 1:
+        axes = [axes] if cols == 1 else list(axes)
+    else:
+        axes = axes.flatten()
+
+    for i, (img, title) in enumerate(zip(images, titles)):
+        if len(img.shape) == 3 and img.shape[2] == 3:
+            # Convert BGR to RGB if needed
+            if img.dtype == np.uint8 and np.mean(img) > 1:
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            else:
+                img_rgb = img
+        else:
+            img_rgb = img
+
+        axes[i].imshow(img_rgb)
+        axes[i].set_title(title)
+        axes[i].axis("off")
+
+    # Hide unused subplots
+    for i in range(n_images, len(axes)):
+        axes[i].axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def process_image_with_mask(estimator, image_path: str, mask_path: str, idx_path, idx_dict, mhr_shape_scale_dict, occ_dict, cam_int):
+    """
+    Process image with external mask input.
+
+    Note: The refactored code requires bboxes to be provided along with masks.
+    This function automatically computes bboxes from the mask.
+    """
+    # load in batches
+    image_batch = []
+    bbox_batch = []
+    mask_batch = []
+    n = len(image_path)
+    id_batch = []
+    empty_frame_list = []
+    for i in range(n):
+        # Load mask
+        mask = np.array(Image.open(mask_path[i]).convert('P'))
+        obj_ids = np.unique(mask)
+        obj_ids = obj_ids[obj_ids != 0].astype(int).tolist()
+
+        mask_list = []
+        bbox_list = []
+        id_current = []
+        for obj_id in obj_ids:
+
+            if obj_id in idx_dict:
+                start, end = idx_dict[obj_id]
+                if i >= start and i < end:
+                    mask_com = np.array(Image.open(os.path.join(idx_path[obj_id]['masks'], f"{i:08d}.png")).convert('P')) 
+                    zero_mask = np.zeros_like(mask_com)
+                    zero_mask[mask_com==obj_id] = 255
+                    mask_binary = zero_mask.astype(np.uint8)
+                    mask_list.append(mask_binary)
+                    # Compute bounding box from mask (required by refactored code)
+                    # Find all non-zero pixels in the mask
+                    coords = cv2.findNonZero(mask_binary)
+                    if mask_binary.max() > 0:
+                        id_current.append(obj_id)
+                    # Get bounding box from mask contours
+                    x, y, w, h = cv2.boundingRect(coords)
+                    bbox = np.array([[x, y, x + w, y + h]], dtype=np.float32)
+                    # print(f"Computed bbox from mask: {bbox[0]}")
+                    bbox_list.append(bbox)
+                    continue
+            
+            zero_mask = np.zeros_like(mask)
+            zero_mask[mask==obj_id] = 255
+            mask_binary = zero_mask.astype(np.uint8)
+
+            # mute objects near margin
+            H, W = mask_binary.shape
+            zero_mask_cp = np.zeros_like(mask)
+            zero_mask_cp[mask==obj_id] = 255
+            mask_binary_cp = zero_mask_cp.astype(np.uint8)
+            mask_binary_cp[:int(H*0.05), :] = mask_binary_cp[-int(H*0.05):, :] = mask_binary_cp[:, :int(W*0.05)] = mask_binary_cp[:, -int(W*0.05):] = 0
+            if mask_binary_cp.max() == 0:   # margin objects
+                mask_binary = mask_binary_cp
+
+            # Only append mask/bbox if not margin-filtered
+            # This ensures mask_list/bbox_list indices align with id_current
+            if mask_binary.max() > 0:
+                id_current.append(obj_id)
+                mask_list.append(mask_binary)
+                # Compute bounding box from mask (required by refactored code)
+                coords = cv2.findNonZero(mask_binary)
+                x, y, w, h = cv2.boundingRect(coords)
+                bbox = np.array([[x, y, x + w, y + h]], dtype=np.float32)
+                bbox_list.append(bbox)
+
+        if len(bbox_list) == 0:
+            empty_frame_list.append(i)
+            continue
+
+        id_batch.append(id_current)
+        bbox = np.stack(bbox_list, axis=0)  # TODO: sometimes empty
+        mask_binary = np.stack(mask_list, axis=0)
+        # Process with external mask and computed bbox
+        # Note: The mask needs to match the number of bboxes (1 bbox -> 1 mask)
+        image_batch.append(image_path[i])
+        mask_batch.append(mask_binary)
+        bbox_batch.append(bbox)
+    
+    if len(empty_frame_list) > 0:
+        for occ_k, occ_v in occ_dict.items():
+            for i in sorted(empty_frame_list, reverse=True):
+                occ_v.pop(i)
+
+    if len(image_batch) == 0:
+        return [], [], empty_frame_list
+
+    outputs = estimator.process_frames(image_batch, bboxes=bbox_batch, masks=mask_batch, id_batch=id_batch, idx_path=idx_path, idx_dict=idx_dict, mhr_shape_scale_dict=mhr_shape_scale_dict, occ_dict=occ_dict, cam_int=cam_int)
+
+    return outputs, id_batch, empty_frame_list

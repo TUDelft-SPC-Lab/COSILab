@@ -1,0 +1,16 @@
+.vscode/
+.cursor/
+apptainer/
+__pycache__/
+gradio_tmp/
+outputs/
+experiments/
+checkpoints/
+*.egg-info
+body4d.yaml
+save_masks.py
+save_video.py
+img_vid_concat.py
+build/
+mhr_smpl_conversion/
+imgui.ini

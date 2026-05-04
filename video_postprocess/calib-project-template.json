@@ -1,0 +1,251 @@
+{
+    "fileInfo": [],
+    "detections": [],
+    "residuals": [],
+    "calibration": {
+        "cameras": [
+            {
+                "model": {
+                    "polymorphic_id": 2147483649,
+                    "polymorphic_name": "libCalib::CameraModelOpenCV",
+                    "ptr_wrapper": {
+                        "valid": 1,
+                        "data": {
+                            "CameraModelCRT": {
+                                "CameraModelBase": {
+                                    "imageSize": {
+                                        "width": 4096,
+                                        "height": 3008
+                                    }
+                                }
+                            },
+                            "parameters": {
+                                "f": {
+                                    "val": 1.0,
+                                    "state": 0
+                                },
+                                "ar": {
+                                    "val": 1.0,
+                                    "state": 0
+                                },
+                                "cx": {
+                                    "val": 2047.5,
+                                    "state": 0
+                                },
+                                "cy": {
+                                    "val": 1503.5,
+                                    "state": 0
+                                },
+                                "k1": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "k2": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "k3": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "k4": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "k5": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "k6": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "p1": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "p2": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "s1": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "s2": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "s3": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "s4": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "tauX": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "tauY": {
+                                    "val": 0.0,
+                                    "state": 2
+                                }
+                            }
+                        }
+                    }
+                },
+                "transform": {
+                    "rotation": {
+                        "rx": 0.0,
+                        "ry": 0.0,
+                        "rz": 0.0
+                    },
+                    "translation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                }
+            },
+            {
+                "model": {
+                    "polymorphic_id": 1,
+                    "ptr_wrapper": {
+                        "valid": 1,
+                        "data": {
+                            "CameraModelCRT": {
+                                "CameraModelBase": {
+                                    "imageSize": {
+                                        "width": 4096,
+                                        "height": 3008
+                                    }
+                                }
+                            },
+                            "parameters": {
+                                "f": {
+                                    "val": 1.0,
+                                    "state": 0
+                                },
+                                "ar": {
+                                    "val": 1.0,
+                                    "state": 0
+                                },
+                                "cx": {
+                                    "val": 2047.5,
+                                    "state": 0
+                                },
+                                "cy": {
+                                    "val": 1503.5,
+                                    "state": 0
+                                },
+                                "k1": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "k2": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "k3": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "k4": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "k5": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "k6": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "p1": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "p2": {
+                                    "val": 0.0,
+                                    "state": 0
+                                },
+                                "s1": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "s2": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "s3": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "s4": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "tauX": {
+                                    "val": 0.0,
+                                    "state": 2
+                                },
+                                "tauY": {
+                                    "val": 0.0,
+                                    "state": 2
+                                }
+                            }
+                        }
+                    }
+                },
+                "transform": {
+                    "rotation": {
+                        "rx": 0.0,
+                        "ry": 0.0,
+                        "rz": 0.0
+                    },
+                    "translation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                }
+            }
+        ],
+        "poses": [
+            {
+                "transform": {
+                    "rotation": {
+                        "rx": 0.0,
+                        "ry": 0.0,
+                        "rz": 0.0
+                    },
+                    "translation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                }
+            }
+        ],
+        "targets": [],
+        "distanceConstraints": [],
+        "isInitialized": false,
+        "isOptimized": false
+    },
+    "covariance": {
+        "succeeded": false,
+        "statusString": "",
+        "covarianceMatrix": {
+            "size": {
+                "width": 0,
+                "height": 0
+            },
+            "pixels": []
+        },
+        "labels": []
+    },
+    "targets": []
+}
