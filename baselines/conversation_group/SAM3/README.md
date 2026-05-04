@@ -1,226 +1,116 @@
-<!-- <h1 align="center">🏂 SAM-Body4D</h1> -->
+# SAM3 / SAM-Body4D for INGroup
 
-# 🏂 SAM-Body4D
+This directory contains a local adaptation of the original SAM-Body4D repository:
 
-[**Mingqi Gao**](https://mingqigao.com), [**Yunqi Miao**](https://yoqim.github.io/), [**Jungong Han**](https://jungonghan.github.io/)
+https://github.com/gaomingqi/sam-body4d
 
-**SAM-Body4D** is a **training-free** method for **temporally consistent** and **robust** 4D human mesh recovery from videos.
-By leveraging **pixel-level human continuity** from promptable video segmentation **together with occlusion recovery**, it reliably preserves identity and full-body geometry in challenging in-the-wild scenes.
+Refer to the upstream repository for the original installation guide, model details, citation, and general SAM-Body4D usage. The notes below only document the INGroup mask-generation workflow added in this project.
 
-[ 📄 [`Paper`](https://arxiv.org/pdf/2512.08406)] [ 🌐 [`Project Page`](https://mingqigao.com/projects/sam-body4d/index.html)] [ 📝 [`BibTeX`](#-citation)]
+## Generate Masks for INGroup
 
+The INGroup mask workflow runs SAM-3 masklet extraction over 10-second video segments, using the first-frame person bounding-box annotations for each segment.
 
-### ✨ Key Features
+Main entry points:
 
-- **Temporally consistent human meshes across the entire video**
-<div align=center>
-<img src="./assets/demo1.gif" width="99%"/>
-</div>
+- Slurm batch script: `job_scripts/masklets_batch_ingroup.sh`
+- Python runner called by the job: `run_sam3_masklets_batch.py`
+- SAM-Body4D config: `configs/body4d.yaml`
 
-- **Robust multi-human recovery under heavy occlusions**
-<div align=center>
-<img src="./assets/demo2.gif" width="99%"/>
-</div>
+The Slurm script expects this cluster layout:
 
-- **Robust 4D reconstruction under camera motion**
-<div align=center>
-<img src="./assets/demo3.gif" width="99%"/>
-</div>
-
-<!-- Training-Free 4D Human Mesh Recovery from Videos, based on [SAM-3](https://github.com/facebookresearch/sam3), [Diffusion-VAS](https://github.com/Kaihua-Chen/diffusion-vas), and [SAM-3D-Body](https://github.com/facebookresearch/sam-3d-body). -->
-
-## 🕹️ Gradio Demo
-
-https://github.com/user-attachments/assets/07e49405-e471-40a0-b491-593d97a95465
-
-
-## 📊 Resource & Profiling Summary
-
-For detailed GPU/CPU resource usage, peak memory statistics, and runtime profiling, please refer to:
-
-👉 **[resources.md](assets/doc/resources.md)**  
-
-
-## 🖥️ Installation
-
-#### 1. Create and Activate Environment
-```
-conda create -n body4d python=3.12 -y
-conda activate body4d
-```
-#### 2. Install PyTorch (choose the version that matches your CUDA), Detectron, and SAM3
-```
-pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118
-pip install 'git+https://github.com/facebookresearch/detectron2.git@a1ce2f9' --no-build-isolation --no-deps
-pip install -e models/sam3
-```
-If you are using a different CUDA version, please select the matching PyTorch build from the official download page:
-https://pytorch.org/get-started/previous-versions/
-
-#### 3. Install Dependencies
-```
-pip install -e .
+```text
+/scratch/zli33/data/ingroup/
+  video_segs_10s/
+    cam02_batch01/
+      *_seg*.mp4
+  video_frame_annotations/
+    cam02_batch01*/
+      *_seg*.json
+  bbox_kp/
+    cam02_batch01/
 ```
 
-## 🧪 Apptainer / Singularity (cluster)
+Annotation JSON files are matched to segment videos by segment basename. Each annotation file should contain a `shapes` list. Each shape is treated as one person and should include:
 
-If you want a self-contained `.sif` for running on a cluster, make sure **SAM3 is installed inside the image**.
-Even though this repo imports SAM3 via `models.sam3...`, the SAM3 code itself imports `sam3.*` internally; if `sam3` is not installed, you will see:
-`ModuleNotFoundError: No module named 'sam3'`.
+- `label`: the real person ID
+- `points`: two rectangle corners, `[[x1, y1], [x2, y2]]`
 
-#### Build the SIF
+### Submit a Job
+
+From the SAM3 directory on the cluster:
 
 ```bash
-apptainer build body4d.sif apptainer/body4d.def
+cd /home/zli33/projects/sam-body4d
+sbatch job_scripts/masklets_batch_ingroup.sh -cam 2 -b 1
 ```
 
-#### Quick import check inside the image (recommended)
+Run multiple batches in one job:
 
 ```bash
-apptainer exec body4d.sif python scripts/doctor_imports.py
+sbatch job_scripts/masklets_batch_ingroup.sh -cam 2 -b 1,3-5
 ```
 
-#### Run on GPU nodes
-
-Bind your checkpoint directory into the container and pass the normal commands:
+Use a different annotation-to-video coordinate scale:
 
 ```bash
-apptainer exec --nv \
-  --bind /path/to/checkpoints:/checkpoints \
-  body4d.sif \
-  python infer_video.py --video /path/to/input.mp4 --config configs/body4d.yaml
+sbatch job_scripts/masklets_batch_ingroup.sh -cam 2 -b 1,3-5 -cam_res_scale 0.5
 ```
 
-**Debug tips if you still see `sam3` import errors**
-- **Use the same python/pip**: inside the image, always prefer `python -m pip ...` (never plain `pip ...`).
-- **Verify install location**: `apptainer exec body4d.sif python -c "import sam3; print(sam3.__file__)"`.
-- **If you bind-mount the repo** over the image’s `/opt/sam-body4d`, you can accidentally “hide” the code the editable install points to. Either don’t bind-mount the repo, or bind it to a different path.
+### Arguments
 
-#### Fast repro for the BF16 sparse CUDA error (SAM-3D-Body / MHR)
+- `-cam <num>`: camera number. The script formats it as `cam%02d`.
+- `-b <spec>`: batch number specification in the range `1` to `7`.
+  Supported forms are `1`, `1,3,5`, `3-5`, and `1,3-5`.
+- `-cam_res_scale <float>`: scale applied to annotation bounding boxes before converting them to SAM coordinates. Default is `0.5`.
 
-If you see:
-`RuntimeError: "addmm_sparse_cuda" not implemented for 'BFloat16'`
-you can reproduce (and verify the fix) without running the full pipeline:
+For each selected batch, the script constructs:
 
-```bash
-apptainer exec --nv --bind /path/to/checkpoints:/checkpoints body4d.sif \
-  python scripts/test_mhr_bf16_issue.py --mhr /checkpoints/sam-3d-body-dinov3/assets/mhr_model.pt --device cuda
+```text
+cam%02d_batch%02d
 ```
 
-This should show FP32 succeeding and BF16 failing. The typical fix is to force MHR (or all SAM-3D-Body inference) to run in FP32.
+For example, `-cam 2 -b 1` processes `cam02_batch01`.
 
-#### SAM3-only smoke test
+### Runtime Behavior
 
-To confirm SAM3 is installed and can build a model from checkpoint (without running SAM-Body4D):
+Before running inference, the Slurm script attempts to create a code snapshot under:
 
-```bash
-apptainer exec --nv --bind /path/to/checkpoints:/checkpoints body4d.sif \
-  python scripts/test_sam3_only.py --ckpt /checkpoints/sam3/sam3.pt --device cuda
+```text
+/scratch/zli33/data/ingroup/bbox_kp/_snapshots/
 ```
 
+If the snapshot succeeds, the container runs from that snapshot. If it fails, the job falls back to the live repository under `/home/zli33/projects/sam-body4d`.
 
-## 🚀 Run the Demo
+The job binds the checkpoint, INGroup data, SAM4D data, and home directories into the Apptainer image:
 
-#### 1. Setup checkpoints & config (recommended)
-
-We provide an automated setup script that:
-- generates `configs/body4d.yaml` from a release template,
-- downloads all required checkpoints (existing files will be skipped).
-
-Some checkpoints (**[SAM 3](https://huggingface.co/facebook/sam3)** and **[SAM 3D Body](https://huggingface.co/facebook/sam-3d-body-dinov3)**) require prior access approval on Hugging Face.
-Before running the setup script, please make sure you have **accepted access**
-on their Hugging Face pages.
-
-If you plan to use these checkpoints, login once:
-```bash
-huggingface-cli login
-```
-Then run the setup script:
-```bash
-python scripts/setup.py --ckpt-root /path/to/checkpoints
-```
-#### 2. Run
-```bash
-python app.py
-```
-#### Manual checkpoint setup (optional)
-
-If you prefer to download checkpoints manually ([SAM 3](https://huggingface.co/facebook/sam3), [SAM 3D Body](https://huggingface.co/facebook/sam-3d-body-dinov3), [MoGe-2](https://huggingface.co/Ruicheng/moge-2-vitl-normal), [Diffusion-VAS](https://github.com/Kaihua-Chen/diffusion-vas?tab=readme-ov-file#download-checkpoints), [Depth-Anything V2](https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth?download=true)), please place them under the directory with the following structure:
-```
-${CKPT_ROOT}/
-├── sam3/                                
-│   └── sam3.pt
-├── sam-3d-body-dinov3/
-│   ├── model.ckpt
-│   └── assets/
-│       └── mhr_model.pt
-├── moge-2-vitl-normal/
-│   └── model.pt
-├── diffusion-vas-amodal-segmentation/
-│   └── (directory contents)
-├── diffusion-vas-content-completion/
-│   └── (directory contents)
-└── depth_anything_v2_vitl.pth
-```
-After placing the files correctly, you can run the setup script again.
-Existing files will be detected and skipped automatically.
-
-## 🎯 Inference Scripts
-
-We provide multiple ways to run inference:
-
-### 1. Interactive Gradio App (`app.py`)
-**Best for**: Manual annotation and exploration
-```bash
-python app.py
-```
-- Upload videos and interactively click to annotate people
-- Visualize results in real-time
-
-### 2. Command-Line Tool (`infer_video.py`)
-**Best for**: Batch processing with known object locations
-```bash
-# Step 1: Get bounding boxes interactively
-python tools/get_bbox_interactive.py --video your_video.mp4 --frame 0
-
-# Step 2: Run inference with the boxes
-python infer_video.py \
-    --video your_video.mp4 \
-    --config configs/body4d.yaml \
-    --output results/ \
-    --boxes "1,0,150,200,350,600" "2,0,400,150,600,550"
+```text
+/scratch/zli33/models/sam4d_checkpoints -> /mnt/sam4d_checkpoints
+/scratch/zli33/data/ingroup          -> /mnt/data/ingroup
+/scratch/zli33/data/sam4d            -> /mnt/data/sam4d_body
+/home/zli33                          -> /mnt/home/zli33
 ```
 
-**Important**: You must provide initial prompts (bounding boxes or points) for SAM-3 to track objects. Use `--boxes` or `--points` arguments.
+### Outputs
 
-### 3. Python Library (`scripts/offline_app.py`)
-**Best for**: Integration into other scripts
-```python
-from scripts.offline_app import offline_app
-app = offline_app(refine_occlusion=True)
-# See INFERENCE_GUIDE.md for details
+For each sequence, outputs are written to:
+
+```text
+/scratch/zli33/data/ingroup/bbox_kp/<sequence>/
 ```
 
-### 📖 Detailed Documentation
+Typical output files include:
 
-For comprehensive usage instructions, see:
-- **[ANSWERS.md](ANSWERS.md)** - Quick answers about initialization and prompts
-- **[INFERENCE_GUIDE.md](INFERENCE_GUIDE.md)** - Complete usage guide
-- **[example_usage.sh](example_usage.sh)** - Working examples
-- **[SUMMARY.md](SUMMARY.md)** - Overview of all scripts
+- `masks.zip`: palette mask PNGs with frame-level object IDs
+- `images.zip`: extracted RGB frames
+- `video_mask.mp4`: visualization video with masks overlaid
+- `mask_bbox.json`: bounding boxes extracted from generated masks
+- `id_mapping.json`: per-segment mapping from consecutive SAM IDs to real person IDs
+- `masklets_meta.json`: run metadata
+- `gpu_mem_stage1_batch.json`: GPU memory summary
 
-## 📝 Citation
-If you find this repository useful, please consider giving a star ⭐ and citation.
+Slurm logs are written to:
+
+```text
+/scratch/zli33/slurm_outputs/sam_4d_body/slurm_<job_id>.out
+/scratch/zli33/slurm_outputs/sam_4d_body/slurm_<job_id>.err
 ```
-@article{gao2025sambody4d,
-  title   = {SAM-Body4D: Training-Free 4D Human Body Mesh Recovery from Videos},
-  author  = {Gao, Mingqi and Miao, Yunqi and Han, Jungong},
-  journal = {arXiv preprint arXiv:2512.08406},
-  year    = {2025},
-  url     = {https://arxiv.org/abs/2512.08406}
-}
-```
-
-## 👏 Acknowledgements
-
-The project is built upon [SAM-3](https://github.com/facebookresearch/sam3), [Diffusion-VAS](https://github.com/Kaihua-Chen/diffusion-vas) and [SAM-3D-Body](https://github.com/facebookresearch/sam-3d-body). We sincerely thank the original authors for their outstanding work and contributions. 

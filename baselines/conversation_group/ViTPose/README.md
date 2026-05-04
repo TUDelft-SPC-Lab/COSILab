@@ -1,304 +1,345 @@
-<h1 align="left">ViTPose: Simple Vision Transformer Baselines for Human Pose Estimation<a href="https://arxiv.org/abs/2204.12484"><img src="https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg" ></a> </h1> 
+# ViTPose for INGroup
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/vitpose-simple-vision-transformer-baselines/pose-estimation-on-coco-test-dev)](https://paperswithcode.com/sota/pose-estimation-on-coco-test-dev?p=vitpose-simple-vision-transformer-baselines)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/vitpose-simple-vision-transformer-baselines/pose-estimation-on-aic)](https://paperswithcode.com/sota/pose-estimation-on-aic?p=vitpose-simple-vision-transformer-baselines)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/vitpose-simple-vision-transformer-baselines/pose-estimation-on-crowdpose)](https://paperswithcode.com/sota/pose-estimation-on-crowdpose?p=vitpose-simple-vision-transformer-baselines)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/vitpose-simple-vision-transformer-baselines/pose-estimation-on-ochuman)](https://paperswithcode.com/sota/pose-estimation-on-ochuman?p=vitpose-simple-vision-transformer-baselines)
+This directory contains a local adaptation of the original ViTPose repository:
 
-<p align="center">
-  <a href="#Results">Results</a> |
-  <a href="#Updates">Updates</a> |
-  <a href="#Usage">Usage</a> |
-  <a href='#Todo'>Todo</a> |
-  <a href="#Acknowledge">Acknowledge</a>
-</p>
+https://github.com/ViTAE-Transformer/ViTPose
 
-<p align="center">
-<a href="https://giphy.com/gifs/UfPQB1qKir7Vqem6sL/fullscreen"><img src="https://media.giphy.com/media/ZewXwZuixYKS2lZmNL/giphy.gif"></a>   <a href="https://giphy.com/gifs/DCvf1DrWZgbwPa8bWZ/fullscreen"><img src="https://media.giphy.com/media/2AEeuicbIjwqp2mbug/giphy.gif"></a>
-</p>
-<p align="center">
-<a href="https://giphy.com/gifs/r3GaZz7H1H6zpuIvPI/fullscreen"><img src="https://media.giphy.com/media/13oe6zo6b2B7CdsOac/giphy.gif"></a>    <a href="https://giphy.com/gifs/FjzrGJxsOzZAXaW7Vi/fullscreen"><img src="https://media.giphy.com/media/4JLERHxOEgH0tt5DZO/giphy.gif"></a>
-</p>
+Refer to the upstream repository for the original model documentation, installation guide, training details, and citation. The notes below only document the INGroup-specific pose-estimation workflow added in this project.
 
-This branch contains the pytorch implementation of <a href="https://arxiv.org/abs/2204.12484">ViTPose: Simple Vision Transformer Baselines for Human Pose Estimation</a> and <a href="https://arxiv.org/abs/2212.04246">ViTPose+: Vision Transformer Foundation Model for Generic Body Pose Estimation</a>. It obtains 81.1 AP on MS COCO Keypoint test-dev set.
+## Pipeline Overview
 
-<img src="figures/Throughput.png" class="left" width='80%'>
+The INGroup pose pipeline is:
 
-## Web Demo
-
-- Integrated into [Huggingface Spaces 🤗](https://huggingface.co/spaces) using [Gradio](https://github.com/gradio-app/gradio). Try out the Web Demo for video: [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/hysts/ViTPose_video) and images [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Gradio-Blocks/ViTPose)
-
-## MAE Pre-trained model
-
-- The small size MAE pre-trained model can be found in [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccZeiFjh4DJ7gjYyg?e=iTMdMq). 
-- The base, large, and huge pre-trained models using MAE can be found in the [MAE official repo](https://github.com/facebookresearch/mae).
-
-## Results from this repo on MS COCO val set (single-task training)
-
-Using detection results from a detector that obtains 56 mAP on person. The configs here are for both training and test.
-
-> With classic decoder
-
-| Model | Pretrain | Resolution | AP | AR | config | log | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: |
-| ViTPose-S | MAE | 256x192 | 73.8 | 79.2 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_small_coco_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcchdNXBAh7ClS14pA?e=dKXmJ6) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccifT1XlGRatxg3vw?e=9wz7BY) |
-| ViTPose-B | MAE | 256x192 | 75.8 | 81.1 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_base_coco_256x192.py) | [log](logs/vitpose-b.log.json) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSMjp1_NrV3VRSmK?e=Q1uZKs) |
-| ViTPose-L | MAE | 256x192 | 78.3 | 83.5 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_large_coco_256x192.py) | [log](logs/vitpose-l.log.json) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSd9k_kuktPtiP4F?e=K7DGYT) |
-| ViTPose-H | MAE | 256x192 | 79.1 | 84.1 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py) | [log](logs/vitpose-h.log.json) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgShLMI-kkmvNfF_h?e=dEhGHe) |
-
-> With simple decoder
-
-| Model | Pretrain | Resolution | AP | AR | config | log | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: |
-| ViTPose-S | MAE | 256x192 | 73.5 | 78.9 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_small_simple_coco_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccfkqELJqE67kpRtw?e=InSjJP) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccgb_50jIgiYkHvdw?e=D7RbH2) |
-| ViTPose-B | MAE | 256x192 | 75.5 | 80.9 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_base_simple_coco_256x192.py) | [log](logs/vitpose-b-simple.log.json) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSRPKrD5PmDRiv0R?e=jifvOe) |
-| ViTPose-L | MAE | 256x192 | 78.2 | 83.4 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_large_simple_coco_256x192.py) | [log](logs/vitpose-l-simple.log.json) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSVS6DP2LmKwZ3sm?e=MmCvDT) |
-| ViTPose-H | MAE | 256x192 | 78.9 | 84.0 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_simple_coco_256x192.py) | [log](logs/vitpose-h-simple.log.json) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSbHyN2mjh2n2LyG?e=y0FgMK) |
-
-
-## Results with multi-task training
-
-**Note** \* There may exist duplicate images in the crowdpose training set and the validation images in other datasets, as discussed in [issue #24](https://github.com/ViTAE-Transformer/ViTPose/issues/24). Please be careful when using these models for evaluation. We provide the results without the crowpose dataset for reference.
-
-### Human datasets (MS COCO, AIC, MPII, CrowdPose)
-> Results on MS COCO val set
-
-Using detection results from a detector that obtains 56 mAP on person. Note the configs here are only for evaluation.
-
-| Model | Dataset | Resolution | AP | AR | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: | :----: |
-| ViTPose-B | COCO+AIC+MPII | 256x192 | 77.1 | 82.2 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_base_coco_256x192.py)  | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcccwaTZ8xCFFM3Sjg?e=chmiK5) |
-| ViTPose-L | COCO+AIC+MPII | 256x192 | 78.7 | 83.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_large_coco_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccdOLQqSo6E87GfMw?e=TEurgW) |
-| ViTPose-H | COCO+AIC+MPII | 256x192 | 79.5 | 84.5 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccmHofkmfJDQDukVw?e=gRK224) |
-| ViTPose-G | COCO+AIC+MPII | 576x432 | 81.0 | 85.6 | | |
-| ViTPose-B* | COCO+AIC+MPII+CrowdPose | 256x192 | 77.5 | 82.6 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_base_coco_256x192.py)  |[Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSrlMB093JzJtqq-?e=Jr5S3R) |
-| ViTPose-L* | COCO+AIC+MPII+CrowdPose | 256x192 | 79.1 | 84.1 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_large_coco_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgTBm3dCVmBUbHYT6?e=fHUrTq) |
-| ViTPose-H* | COCO+AIC+MPII+CrowdPose | 256x192 | 79.8 | 84.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgS5rLeRAJiWobCdh?e=41GsDd) |
-| **ViTPose+-S** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 75.8 | 82.6 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/vitPose+_small_coco+aic+mpii+ap10k+apt36k+wholebody_256x192_udp.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccqO1JBHtBjNaeCbQ?e=ZN5NSz) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccrwORr61gT9E4n8g?e=kz9sz5) |
-| **ViTPose+-B** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 77.0 | 82.6 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/vitPose+_base_coco+aic+mpii+ap10k+apt36k+wholebody_256x192_udp.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccjj9lgPTlkGT1HTw?e=OlS5zv) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcckRZk1bIAuRa_E1w?e=ylDB2G) |
-| **ViTPose+-L** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 78.6 | 84.1 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/vitPose+_large_coco+aic+mpii+ap10k+apt36k+wholebody_256x192_udp.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccp7HJf4QMeQQpeyA?e=JagPNt) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccs1SNFUGSTsmRJ8w?e=a9zKwZ) |
-| **ViTPose+-H** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 79.4 | 84.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/vitPose+_huge_coco+aic+mpii+ap10k+apt36k+wholebody_256x192_udp.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcclxZOlwRJdqpIIjA?e=nFQgVC) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccoXv8rCUgVe7oD9Q?e=ZBw6gR) |
-
-
-> Results on OCHuman test set
-
-Using groundtruth bounding boxes. Note the configs here are only for evaluation.
-
-| Model | Dataset | Resolution | AP | AR | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: | :----: |
-| ViTPose-B | COCO+AIC+MPII | 256x192 | 88.0 | 89.6 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_base_ochuman_256x192.py)  | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcccwaTZ8xCFFM3Sjg?e=chmiK5) |
-| ViTPose-L | COCO+AIC+MPII | 256x192 | 90.9 | 92.2 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_large_ochuman_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccdOLQqSo6E87GfMw?e=TEurgW) |
-| ViTPose-H | COCO+AIC+MPII | 256x192 | 90.9 | 92.3 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_huge_ochuman_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccmHofkmfJDQDukVw?e=gRK224) |
-| ViTPose-G | COCO+AIC+MPII | 576x432 | 93.3 | 94.3 | | |
-| ViTPose-B* | COCO+AIC+MPII+CrowdPose | 256x192 | 88.2 | 90.0 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_base_ochuman_256x192.py)  |[Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSrlMB093JzJtqq-?e=Jr5S3R) |
-| ViTPose-L* | COCO+AIC+MPII+CrowdPose | 256x192 | 91.5 | 92.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_large_ochuman_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgTBm3dCVmBUbHYT6?e=fHUrTq) |
-| ViTPose-H* | COCO+AIC+MPII+CrowdPose | 256x192 | 91.6 | 92.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_huge_ochuman_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgS5rLeRAJiWobCdh?e=41GsDd) |
-| **ViTPose+-S** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 78.4 | 80.6 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_small_ochuman_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccqO1JBHtBjNaeCbQ?e=ZN5NSz) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccrwORr61gT9E4n8g?e=kz9sz5) |
-| **ViTPose+-B** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 82.6 | 84.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_base_ochuman_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccjj9lgPTlkGT1HTw?e=OlS5zv) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcckRZk1bIAuRa_E1w?e=ylDB2G) |
-| **ViTPose+-L** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 85.7 | 87.5 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_large_ochuman_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccp7HJf4QMeQQpeyA?e=JagPNt) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccs1SNFUGSTsmRJ8w?e=a9zKwZ) |
-| **ViTPose+-H** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 85.7 | 87.4 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_huge_ochuman_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcclxZOlwRJdqpIIjA?e=nFQgVC) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccoXv8rCUgVe7oD9Q?e=ZBw6gR) |
-
-> Results on MPII val set
-
-Using groundtruth bounding boxes. Note the configs here are only for evaluation. The metric is PCKh.
-
-| Model | Dataset | Resolution | Mean | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: |
-| ViTPose-B | COCO+AIC+MPII | 256x192 | 93.3 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_base_mpii_256x192.py)  | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcccwaTZ8xCFFM3Sjg?e=chmiK5) |
-| ViTPose-L | COCO+AIC+MPII | 256x192 | 94.0 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_large_mpii_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccdOLQqSo6E87GfMw?e=TEurgW) |
-| ViTPose-H | COCO+AIC+MPII | 256x192 | 94.1 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_huge_mpii_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccmHofkmfJDQDukVw?e=gRK224) |
-| ViTPose-G | COCO+AIC+MPII | 576x432 | 94.3 | | |
-| ViTPose-B* | COCO+AIC+MPII+CrowdPose | 256x192 | 93.4 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_base_mpii_256x192.py)  |[Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSy_OSEm906wd2LB?e=GOSg14) |
-| ViTPose-L* | COCO+AIC+MPII+CrowdPose | 256x192 | 93.9 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_large_mpii_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgTM32I6Kpjr-esl6?e=qvh0Yl) |
-| ViTPose-H* | COCO+AIC+MPII+CrowdPose | 256x192 | 94.1 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_huge_mpii_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgTT90XEQBKy-scIH?e=D2WhTS) |
-| **ViTPose+-S** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 92.7 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_small_mpii_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccqO1JBHtBjNaeCbQ?e=ZN5NSz) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccrwORr61gT9E4n8g?e=kz9sz5) |
-| **ViTPose+-B** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 92.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_base_mpii_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccjj9lgPTlkGT1HTw?e=OlS5zv) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcckRZk1bIAuRa_E1w?e=ylDB2G) |
-| **ViTPose+-L** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 94.0 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_large_mpii_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccp7HJf4QMeQQpeyA?e=JagPNt) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccs1SNFUGSTsmRJ8w?e=a9zKwZ) |
-| **ViTPose+-H** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 94.2 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/mpii/ViTPose_huge_mpii_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcclxZOlwRJdqpIIjA?e=nFQgVC) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccoXv8rCUgVe7oD9Q?e=ZBw6gR) |
-
-
-> Results on AI Challenger test set
-
-Using groundtruth bounding boxes. Note the configs here are only for evaluation.
-
-| Model | Dataset | Resolution | AP | AR | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: | :----: |
-| ViTPose-B | COCO+AIC+MPII | 256x192 | 32.0 | 36.3 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/aic/ViTPose_base_aic_256x192.py)  | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcccwaTZ8xCFFM3Sjg?e=chmiK5) |
-| ViTPose-L | COCO+AIC+MPII | 256x192 | 34.5 | 39.0 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/aic/ViTPose_large_aic_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccdOLQqSo6E87GfMw?e=TEurgW) |
-| ViTPose-H | COCO+AIC+MPII | 256x192 | 35.4 | 39.9 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/aic/ViTPose_huge_aic_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccmHofkmfJDQDukVw?e=gRK224) |
-| ViTPose-G | COCO+AIC+MPII | 576x432 | 43.2 | 47.1 | | |
-| ViTPose-B* | COCO+AIC+MPII+CrowdPose | 256x192 | 31.9 | 36.3 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/aic/ViTPose_base_aic_256x192.py)  |[Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgSlvdVaXTC92SHYH?e=j7iqcp) |
-| ViTPose-L* | COCO+AIC+MPII+CrowdPose | 256x192 | 34.6 | 39.0 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/aic/ViTPose_large_aic_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgTF06FX3FSAm0MOH?e=rYts9F) |
-| ViTPose-H* | COCO+AIC+MPII+CrowdPose | 256x192 | 35.3 | 39.8 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/aic/ViTPose_huge_aic_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgS1MRmb2mcow_K04?e=q9jPab) |
-| **ViTPose+-S** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 29.7 | 34.3 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_small_ochuman_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccqO1JBHtBjNaeCbQ?e=ZN5NSz) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccrwORr61gT9E4n8g?e=kz9sz5) |
-| **ViTPose+-B** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 31.8 | 36.3 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_base_ochuman_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccjj9lgPTlkGT1HTw?e=OlS5zv) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcckRZk1bIAuRa_E1w?e=ylDB2G) |
-| **ViTPose+-L** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 34.3 | 38.9 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_large_ochuman_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccp7HJf4QMeQQpeyA?e=JagPNt) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccs1SNFUGSTsmRJ8w?e=a9zKwZ) |
-| **ViTPose+-H** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 34.8 | 39.1 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/ochuman/ViTPose_huge_ochuman_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcclxZOlwRJdqpIIjA?e=nFQgVC) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccoXv8rCUgVe7oD9Q?e=ZBw6gR) |
-
-> Results on CrowdPose test set
-
-Using YOLOv3 human detector. Note the configs here are only for evaluation.
-
-| Model | Dataset | Resolution | AP | AP(H) | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: | :----: |
-| ViTPose-B* | COCO+AIC+MPII+CrowdPose | 256x192 | 74.7 | 63.3 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/crowdpose/ViTPose_base_crowdpose_256x192.py)  |[Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgStrrCb91cPlaxJx?e=6Xobo6) |
-| ViTPose-L* | COCO+AIC+MPII+CrowdPose | 256x192 | 76.6 | 65.9 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/crowdpose/ViTPose_large_crowdpose_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgTK3dug-r7c6GFyu?e=1ZBpEG) |
-| ViTPose-H* | COCO+AIC+MPII+CrowdPose | 256x192 | 76.3 | 65.6 | [config](configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/crowdpose/ViTPose_huge_crowdpose_256x192.py) | [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgS-oAvEV4MTD--Xr?e=EeW2Fu) |
-
-### Animal datasets (AP10K, APT36K)
-
-> Results on AP-10K test set
-
-| Model | Dataset | Resolution | AP | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: |
-| **ViTPose+-S** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 71.4 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/ap10k/ViTPose_small_ap10k_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccqO1JBHtBjNaeCbQ?e=ZN5NSz) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccrwORr61gT9E4n8g?e=kz9sz5) |
-| **ViTPose+-B** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 74.5 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/ap10k/ViTPose_base_ap10k_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccjj9lgPTlkGT1HTw?e=OlS5zv) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcckRZk1bIAuRa_E1w?e=ylDB2G) |
-| **ViTPose+-L** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 80.4 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/ap10k/ViTPose_large_ap10k_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccp7HJf4QMeQQpeyA?e=JagPNt) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccs1SNFUGSTsmRJ8w?e=a9zKwZ) |
-| **ViTPose+-H** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 82.4 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/ap10k/ViTPose_huge_ap10k_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcclxZOlwRJdqpIIjA?e=nFQgVC) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccoXv8rCUgVe7oD9Q?e=ZBw6gR) |
-
-> Results on APT-36K val set
-
-| Model | Dataset | Resolution | AP | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: |
-| **ViTPose+-S** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 74.2 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/apt36k/ViTPose_small_apt36k_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccqO1JBHtBjNaeCbQ?e=ZN5NSz) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccrwORr61gT9E4n8g?e=kz9sz5) |
-| **ViTPose+-B** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 75.9 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/apt36k/ViTPose_base_apt36k_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccjj9lgPTlkGT1HTw?e=OlS5zv) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcckRZk1bIAuRa_E1w?e=ylDB2G) |
-| **ViTPose+-L** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 80.8 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/apt36k/ViTPose_large_apt36k_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccp7HJf4QMeQQpeyA?e=JagPNt) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccs1SNFUGSTsmRJ8w?e=a9zKwZ) |
-| **ViTPose+-H** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 82.3 | [config](configs/animal/2d_kpt_sview_rgb_img/topdown_heatmap/apt36k/ViTPose_huge_apt36k_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcclxZOlwRJdqpIIjA?e=nFQgVC) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccoXv8rCUgVe7oD9Q?e=ZBw6gR) |
-
-### WholeBody dataset
-
-| Model | Dataset | Resolution | AP | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: |
-| **ViTPose+-S** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 54.4 | [config](configs/wholebody/2d_kpt_sview_rgb_img/topdown_heatmap/coco-wholebody/ViTPose_small_wholebody_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccqO1JBHtBjNaeCbQ?e=ZN5NSz) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccrwORr61gT9E4n8g?e=kz9sz5) |
-| **ViTPose+-B** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 57.4 | [config](cconfigs/wholebody/2d_kpt_sview_rgb_img/topdown_heatmap/coco-wholebody/ViTPose_base_wholebody_256x192.py)  | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccjj9lgPTlkGT1HTw?e=OlS5zv) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgcckRZk1bIAuRa_E1w?e=ylDB2G) |
-| **ViTPose+-L** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 60.6 | [config](configs/wholebody/2d_kpt_sview_rgb_img/topdown_heatmap/coco-wholebody/ViTPose_large_wholebody_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgccp7HJf4QMeQQpeyA?e=JagPNt) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccs1SNFUGSTsmRJ8w?e=a9zKwZ) |
-| **ViTPose+-H** | COCO+AIC+MPII+AP10K+APT36K+WholeBody | 256x192 | 61.2 | [config](configs/wholebody/2d_kpt_sview_rgb_img/topdown_heatmap/coco-wholebody/ViTPose_huge_wholebody_256x192.py) | [log](https://1drv.ms/u/s!AimBgYV7JjTlgcclxZOlwRJdqpIIjA?e=nFQgVC) \| [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccoXv8rCUgVe7oD9Q?e=ZBw6gR) |
-
-### Transfer results on the hand dataset (InterHand2.6M)
-
-| Model | Dataset | Resolution | AUC | config | weight |
-| :----: | :----: | :----: | :----: | :----: | :----: |
-| **ViTPose+-S** | COCO+AIC+MPII+WholeBody | 256x192 | 86.5 | [config](configs/hand/2d_kpt_sview_rgb_img/topdown_heatmap/interhand2d/ViTPose_small_interhand2d_all_256x192.py)  | Coming Soon |
-| **ViTPose+-B** | COCO+AIC+MPII+WholeBody | 256x192 | 87.0 | [config](configs/hand/2d_kpt_sview_rgb_img/topdown_heatmap/interhand2d/ViTPose_base_interhand2d_all_256x192.py)  | Coming Soon |
-| **ViTPose+-L** | COCO+AIC+MPII+WholeBody | 256x192 | 87.5 | [config](configs/hand/2d_kpt_sview_rgb_img/topdown_heatmap/interhand2d/ViTPose_large_interhand2d_all_256x192.py) | Coming Soon |
-| **ViTPose+-H** | COCO+AIC+MPII+WholeBody | 256x192 | 87.6 | [config](configs/hand/2d_kpt_sview_rgb_img/topdown_heatmap/interhand2d/ViTPose_huge_interhand2d_all_256x192.py) | Coming Soon |
-
-## Updates
-
-> [2023-01-10] Update ViTPose+! It uses MoE strategies to jointly deal with human, animal, and wholebody pose estimation tasks.
-
-> [2022-05-24] Upload the single-task training code, single-task pre-trained models, and multi-task pretrained models.
-
-> [2022-05-06] Upload the logs for the base, large, and huge models!
-
-> [2022-04-27] Our ViTPose with ViTAE-G obtains 81.1 AP on COCO test-dev set! 
-
-> Applications of ViTAE Transformer include: [image classification](https://github.com/ViTAE-Transformer/ViTAE-Transformer/tree/main/Image-Classification) | [object detection](https://github.com/ViTAE-Transformer/ViTAE-Transformer/tree/main/Object-Detection) | [semantic segmentation](https://github.com/ViTAE-Transformer/ViTAE-Transformer/tree/main/Semantic-Segmentation) | [animal pose segmentation](https://github.com/ViTAE-Transformer/ViTAE-Transformer/tree/main/Animal-Pose-Estimation) | [remote sensing](https://github.com/ViTAE-Transformer/ViTAE-Transformer-Remote-Sensing) | [matting](https://github.com/ViTAE-Transformer/ViTAE-Transformer-Matting) | [VSA](https://github.com/ViTAE-Transformer/ViTAE-VSA) | [ViTDet](https://github.com/ViTAE-Transformer/ViTDet)
-
-## Usage
-
-### Docker
-1. Build the image with `docker/docker_build.sh` and spin up a container with `docker/docker_run.sh`
-1. Download and unzip the coco dataset from https://cocodataset.org/#download
-  * [2017 Train images 118K/18GB](http://images.cocodataset.org/zips/train2017.zip)
-  * [2017 Train/Val annotations 241MB](http://images.cocodataset.org/annotations/annotations_trainval2017.zip)
-2. Download the pose estimation data from [HRNet](https://github.com/HRNet/HRNet-Human-Pose-Estimation?tab=readme-ov-file#data-preparation)
-  * [One Drive](https://1drv.ms/f/s!AhIXJn_J-blWzzDXoz5BeFl8sWM-) or [Google Drive](https://drive.google.com/drive/folders/1fRUDNUDxe9fjqcRZ2bnF_TKMlO0nB_dk?usp=sharing)
-3. Download the pretrained models from [hugging face](https://huggingface.co/public-data/ViTPose/tree/main/models) or from the links above
-
-### Bare bones
-We use PyTorch 1.9.0 or NGC docker 21.06, and mmcv 1.3.9 for the experiments.
-```bash
-git clone https://github.com/open-mmlab/mmcv.git
-cd mmcv
-git checkout v1.3.9
-MMCV_WITH_OPS=1 pip install -e .
-cd ..
-git clone https://github.com/ViTAE-Transformer/ViTPose.git
-cd ViTPose
-pip install -v -e .
+```text
+SAM3 mask output
+  -> mask_bbox.json + images.zip
+  -> ViTPose keypoint inference
+  -> vitpose_keypoints.json
+  -> dataframe conversion
+  -> vitpose_dataframe.pkl
 ```
 
-After install the two repos, install timm and einops, i.e.,
-```bash
-pip install timm==0.4.9 einops
+Main project-specific entry points:
+
+- Finetuning job: `slurm/submit.sh`
+- Finetuning config: `configs/ViTPose_coco_plus_conflab_w_bg_256x192.py`
+- ViTPose inference job: `slurm/ingroup_daic_zonghuan.sh`
+- ViTPose inference script: `demo/infer_mask_bbox.py`
+- Dataframe conversion job: `slurm/submit_vitpose_dataframe_daic.sh`
+- Dataframe conversion script: `demo/vitpose_to_dataframe.py`
+
+## 0. Finetuning the ViTPose Model
+
+The finetuned model used by the INGroup inference jobs is trained with:
+
+```text
+slurm/submit.sh
 ```
 
-### Train and test scripts 
-After downloading the pretrained models, please conduct the experiments by running
+This job launches `tools/train.py` inside the ViTPose Apptainer image:
 
 ```bash
-# for single machine
-bash tools/dist_train.sh <Config PATH> <NUM GPUs> --cfg-options model.pretrained=<Pretrained PATH> --seed 0
-
-# for multiple machines
-python -m torch.distributed.launch --nnodes <Num Machines> --node_rank <Rank of Machine> --nproc_per_node <GPUs Per Machine> --master_addr <Master Addr> --master_port <Master Port> tools/train.py <Config PATH> --cfg-options model.pretrained=<Pretrained PATH> --launcher pytorch --seed 0
+python /workspace/tools/train.py \
+  configs/ViTPose_coco_plus_conflab_w_bg_256x192.py \
+  --work-dir work_dirs/ViTPose_coco_plus_conflab_w_bg_256x192_filtered \
+  --cfg-options model.pretrained=data/conflab/models/vitpose_base_coco_aic_mpii.pth \
+  --seed 0
 ```
 
-To test the pretrained models performance, please run 
+Submit it from the ViTPose repository on DAIC:
 
 ```bash
-bash tools/dist_test.sh <Config PATH> <Checkpoint PATH> <NUM GPUs>
+cd /home/nfs/zli33/projects/ViTPose
+sbatch --job-name vitpose-conflab \
+  --account ewi-insy-prb \
+  --partition insy,general \
+  slurm/submit.sh
 ```
 
-For ViTPose+ pre-trained models, please first re-organize the pre-trained weights using
+The Slurm wrapper mounts:
+
+```text
+current repo                           -> /workspace
+/tudelft.net/staff-umbrella/neon/experiments/VIT003/ -> /workspace/data/conflab
+/tmp                                  -> /tmp
+```
+
+The finetuning config uses the Conflab dataset definition from:
+
+```text
+configs/_base_/datasets/conflab.py
+```
+
+and reads training and validation data through the container path:
+
+```text
+/workspace/data/conflab/
+  keypoints_and_bboxes_train_filtered.json
+  keypoints_and_bboxes_test.json
+  images_train/
+  images_test/
+  models/vitpose_base_coco_aic_mpii.pth
+```
+
+Important config settings:
+
+- Base checkpoint: `data/conflab/models/vitpose_base_coco_aic_mpii.pth`
+- Output channels: `17` Conflab keypoints
+- Image size: `192 x 256`
+- Optimizer: `AdamW`, learning rate `1e-4`
+- Training length: `5` epochs
+- Evaluation: every epoch with `mAP`, saving the best `AP`
+- Work directory: `work_dirs/ViTPose_coco_plus_conflab_w_bg_256x192_filtered`
+
+The best checkpoint is expected at a path such as:
+
+```text
+work_dirs/ViTPose_coco_plus_conflab_w_bg_256x192_filtered/best_AP_epoch_1.pth
+```
+
+or, on NEON when used by the INGroup inference wrapper:
+
+```text
+/tudelft.net/staff-umbrella/neon/code/ViTPose/work_dirs/ViTPose_coco_plus_conflab_w_bg_256x192_filtered/best_AP_epoch_1.pth
+```
+
+Use that checkpoint as `POSE_CKPT` when running inference:
 
 ```bash
-python tools/model_split.py --source <Pretrained PATH>
+POSE_CKPT=/path/to/best_AP_epoch_1.pth \
+BATCH=cam06_batch02 \
+sbatch slurm/ingroup_daic_zonghuan.sh
 ```
 
-## Todo
+## 1. Reading SAM3 Mask Outputs
 
-This repo current contains modifications including:
+ViTPose does not read `masks.zip` directly during inference. SAM3 first writes mask images, then `run_sam3_masklets_batch.py` extracts per-person bounding boxes from those masks into `mask_bbox.json`. The ViTPose INGroup runner consumes:
 
-- [x] Upload configs and pretrained models
-
-- [x] More models with SOTA results
-
-- [x] Upload multi-task training config
-
-## Acknowledge
-We acknowledge the excellent implementation from [mmpose](https://github.com/open-mmlab/mmdetection) and [MAE](https://github.com/facebookresearch/mae).
-
-## Citing ViTPose
-
-For ViTPose
-
+```text
+<sam3_output>/<batch>/
+  mask_bbox.json
+  images.zip
 ```
-@inproceedings{
-  xu2022vitpose,
-  title={Vi{TP}ose: Simple Vision Transformer Baselines for Human Pose Estimation},
-  author={Yufei Xu and Jing Zhang and Qiming Zhang and Dacheng Tao},
-  booktitle={Advances in Neural Information Processing Systems},
-  year={2022},
+
+or, alternatively:
+
+```text
+<sam3_output>/<batch>/
+  mask_bbox.json
+  images/
+    00000000.jpg
+    00000001.jpg
+```
+
+The expected `mask_bbox.json` schema is:
+
+```json
+{
+  "annotations": {
+    "1": {
+      "bbox": {
+        "1": [x, y, w, h],
+        "3": [x, y, w, h]
+      }
+    }
+  }
 }
 ```
 
-For ViTPose+
+The top-level keys under `annotations` are frame IDs. The keys under `bbox` are person or track IDs inherited from the SAM3 mask-ID mapping. Each bounding box is passed to ViTPose in `xywh` format.
 
+The Slurm wrapper looks for SAM3 output here by default:
+
+```text
+/tudelft.net/staff-umbrella/neon/ingroup_dataset/B2_pipeline/sam3_output/<BATCH>/
 ```
-@article{xu2022vitpose+,
-  title={ViTPose+: Vision Transformer Foundation Model for Generic Body Pose Estimation},
-  author={Xu, Yufei and Zhang, Jing and Zhang, Qiming and Tao, Dacheng},
-  journal={arXiv preprint arXiv:2212.04246},
-  year={2022}
+
+## 2. Running INGroup ViTPose
+
+Use `slurm/ingroup_daic_zonghuan.sh` to run ViTPose on one SAM3 batch output directory.
+
+Default paths in the job:
+
+```text
+NEON=/tudelft.net/staff-umbrella/neon
+VITPOSE_DIR=/home/nfs/zli33/projects/ViTPose
+SIF=${NEON}/apptainer/vitpose-0.0.5.sif
+DATA_ROOT=${NEON}/ingroup_dataset/B2_pipeline/sam3_output/${BATCH}
+OUT_DIR=${NEON}/ingroup_dataset/B2_pipeline/vitpose_results/${BATCH}
+```
+
+The job implementation does the following:
+
+1. Loads CUDA and checks that `DATA_ROOT` exists.
+2. Creates `OUT_DIR`.
+3. Extracts `DATA_ROOT/images.zip` into `/tmp/ingroup_images/${BATCH}` when the zip exists.
+4. Falls back to `DATA_ROOT/images` if an unzipped image directory already exists.
+5. Runs `demo/infer_mask_bbox.py` inside the Apptainer image.
+6. Writes `vitpose_keypoints.json` and, with `--save-video`, `vitpose_kp.mp4`.
+7. Removes the temporary extracted images from `/tmp`.
+
+Submit one batch:
+
+```bash
+cd /home/nfs/zli33/projects/ViTPose
+BATCH=cam06_batch02 sbatch slurm/ingroup_daic_zonghuan.sh
+```
+
+Override the checkpoint:
+
+```bash
+POSE_CKPT=/path/to/best_AP_epoch_5.pth \
+BATCH=cam06_batch02 \
+sbatch slurm/ingroup_daic_zonghuan.sh
+```
+
+Override the SAM3 input root:
+
+```bash
+DATA_ROOT=/path/to/sam3_output/cam06_batch02 \
+BATCH=cam06_batch02 \
+sbatch slurm/ingroup_daic_zonghuan.sh
+```
+
+Run several batches:
+
+```bash
+for b in cam06_batch01 cam06_batch02 cam08_batch01 cam10_batch01; do
+  BATCH=$b sbatch slurm/ingroup_daic_zonghuan.sh
+done
+```
+
+The inference command inside the Slurm job is:
+
+```bash
+python demo/infer_mask_bbox.py \
+  configs/ViTPose_coco_plus_conflab_w_bg_256x192.py \
+  "${POSE_CKPT}" \
+  --data-root "${DATA_ROOT}" \
+  --img-dir "${IMG_DIR}" \
+  --out-dir "${OUT_DIR}" \
+  --save-video
+```
+
+The resulting output layout is:
+
+```text
+/tudelft.net/staff-umbrella/neon/ingroup_dataset/B2_pipeline/vitpose_results/
+  cam06_batch02/
+    vitpose_keypoints.json
+    vitpose_kp.mp4
+```
+
+`vitpose_keypoints.json` keeps the SAM3 person IDs and adds a 17-keypoint Conflab pose for each person:
+
+```json
+{
+  "annotations": {
+    "1": {
+      "bbox": {
+        "1": [x, y, w, h]
+      },
+      "keypoints": {
+        "1": [[x, y, score]]
+      }
+    }
+  }
 }
 ```
 
-For ViTAE and ViTAEv2, please refer to:
-```
-@article{xu2021vitae,
-  title={Vitae: Vision transformer advanced by exploring intrinsic inductive bias},
-  author={Xu, Yufei and Zhang, Qiming and Zhang, Jing and Tao, Dacheng},
-  journal={Advances in Neural Information Processing Systems},
-  volume={34},
-  year={2021}
-}
+## 3. Converting ViTPose JSON to Dataframe PKL
 
-@article{zhang2022vitaev2,
-  title={ViTAEv2: Vision Transformer Advanced by Exploring Inductive Bias for Image Recognition and Beyond},
-  author={Zhang, Qiming and Xu, Yufei and Zhang, Jing and Tao, Dacheng},
-  journal={arXiv preprint arXiv:2202.10108},
-  year={2022}
-}
+Use `slurm/submit_vitpose_dataframe_daic.sh` after `vitpose_keypoints.json` files have been generated.
+
+Default paths in the conversion job:
+
+```text
+RESULTS_ROOT=${NEON}/ingroup_dataset/B2_pipeline/vitpose_results
+OUTPUT_ROOT=${NEON}/ingroup_dataset/B2_pipeline/vitpose_dataframe
+CAMERA_PARAMS_ROOT=${NEON}/ingroup_dataset/processed_data/gopro_data/camera_calibration/camera_params
+GT_GROUPS_ROOT=${NEON}/ingroup_dataset/B2_pipeline/cgroup_annotation
+PLOT_DIR=${NEON}/ingroup_dataset/B2_pipeline/person_plotting
+FRAMES_ROOT=${NEON}/ingroup_dataset/B2_pipeline/video_segs_raw
+```
+
+Submit conversion for all cameras found under `RESULTS_ROOT`:
+
+```bash
+cd /home/nfs/zli33/projects/ViTPose
+sbatch slurm/submit_vitpose_dataframe_daic.sh
+```
+
+Convert only selected cameras:
+
+```bash
+sbatch slurm/submit_vitpose_dataframe_daic.sh --cam=06,08,10
+```
+
+Override input and output roots:
+
+```bash
+RESULTS_ROOT=/path/to/vitpose_results \
+OUTPUT_ROOT=/path/to/vitpose_dataframe \
+sbatch slurm/submit_vitpose_dataframe_daic.sh
+```
+
+The conversion job runs:
+
+```bash
+python demo/vitpose_to_dataframe.py \
+  "${RESULTS_ROOT}" \
+  --output_dir "${OUTPUT_ROOT}" \
+  --output_name vitpose_dataframe.pkl \
+  --camera_params_root "${CAMERA_PARAMS_ROOT}" \
+  --gt_groups_root "${GT_GROUPS_ROOT}" \
+  --plot_dir "${PLOT_DIR}" \
+  --frames_root "${FRAMES_ROOT}"
+```
+
+The converter scans:
+
+```text
+<RESULTS_ROOT>/cam*/vitpose_keypoints.json
+```
+
+For every camera or camera-batch folder, it writes:
+
+```text
+<OUTPUT_ROOT>/<cam_or_batch_name>/vitpose_dataframe.pkl
+```
+
+Each dataframe row represents one frame. Important columns are:
+
+- `timestamp`: frame ID from `vitpose_keypoints.json`
+- `time`: wall-clock time derived from camera number, batch number, and 60 fps timing assumptions
+- `spaceFeat`: dict with `head`, `shoulder`, `hip`, and `foot`
+- `groups`: ground-truth conversational groups loaded from `mingle_1_groups.csv` or `mingle_2_groups.csv` when available
+- `group_ids`: empty placeholder list
+
+Each `spaceFeat` segment is an `(n_people, 4)` object array:
+
+```text
+[person_id, x, y, orientation]
+```
+
+The `x` and `y` coordinates are world-floor coordinates. The converter back-projects 2D ViTPose keypoints using:
+
+```text
+<CAMERA_PARAMS_ROOT>/camera_XX/intrinsic.json
+<CAMERA_PARAMS_ROOT>/camera_XX/extrinsic.json
+```
+
+Diagnostic plots are written under:
+
+```text
+<PLOT_DIR>/camXX/
+```
+
+when `--plot_dir` is provided by the Slurm wrapper.
+
+Slurm logs for both ViTPose inference and dataframe conversion are written to:
+
+```text
+/home/nfs/zli33/slurm_outputs/vitpose-ingroup/infer_slurm_<job_id>.out
+/home/nfs/zli33/slurm_outputs/vitpose-ingroup/infer_slurm_<job_id>.err
 ```
