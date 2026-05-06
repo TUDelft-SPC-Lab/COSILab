@@ -1,0 +1,12 @@
+Keras==2.2.2
+numpy==1.15.4
+scipy==1.1.0
+matplotlib==3.1.1
+scikit-learn==0.21.3
+h5py==2.10.0
+PyYAML==5.4.1
+tensorflow-gpu==1.14.0
+protobuf==3.20.3
+gast==0.2.2
+tensorboard==1.14.0
+tensorflow-estimator==1.14.0
