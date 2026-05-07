@@ -23,6 +23,16 @@ Camera and video preprocessing utilities.
 - Generates camera calibration projects and converts solved calibration to IDIAP/EasyMocap formats.
 - Details: [video_postprocess/README.md](video_postprocess/README.md)
 
+### audio_postprocess
+
+Code-only audio and transcript postprocessing utilities for dataset release workflows.
+
+- Runs WhisperX-based transcription/alignment wrappers for audio clips and main-speaker audio.
+- Supports Presidio/spaCy PII detection, audio redaction, and pseudonymized transcript generation.
+- Includes mingling main-speaker utilities that consume externally generated diarization RTTM files, such as NeMo outputs.
+- Does not include raw audio, transcripts, model weights, generated outputs, logs, caches, or cluster scripts.
+- Details: [audio_postprocess/README.md](audio_postprocess/README.md)
+
 ### baselines
 
 Model baselines and downstream feature-generation code.
@@ -37,7 +47,8 @@ Model baselines and downstream feature-generation code.
 
 1. Decode and synchronise badge sensor data with `BadgeFramework`.
 2. Merge/cut videos and prepare camera calibration with `video_postprocess`.
-3. Generate masks with SAM3, run ViTPose, and convert model outputs into analysis-ready files under `baselines`.
+3. Run audio/transcript redaction or mingling main-speaker pseudonymization with `audio_postprocess` when preparing release-safe audio-derived text.
+4. Generate masks with SAM3, run ViTPose, and convert model outputs into analysis-ready files under `baselines`.
 
 Refer to the component READMEs for exact commands, expected folder layouts, and cluster-specific paths.
 

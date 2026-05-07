@@ -1,0 +1,113 @@
+version: 2
+
+project:
+  name: pii_redaction
+  description: "PII policy v2 for release/training-oriented automatic processing."
+
+language:
+  code: en
+  spacy_model: en_core_web_sm
+
+inputs:
+  transcript_format: whisperx_result_abs_json
+  transcript_word_path: segments[].words[]
+  supported_datasets:
+    - master_trim_norm
+    - mingling
+    - midge_chest_mic
+
+pii:
+  include_types:
+    - PERSON
+    - EMAIL_ADDRESS
+    - PHONE_NUMBER
+
+detectors:
+  PERSON:
+    enabled: true
+    methods:
+      - presidio
+    confidence:
+      min_score: 0.60
+
+  EMAIL_ADDRESS:
+    enabled: true
+    methods:
+      - presidio
+      - regex
+    confidence:
+      min_score: 0.50
+    regex:
+      - '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+
+  PHONE_NUMBER:
+    enabled: true
+    methods:
+      - presidio
+      - regex
+    confidence:
+      min_score: 0.50
+    regex:
+      - '(?:(?:\+|00)\d{1,3}[\s().-]*)?(?:\d[\s().-]*){7,15}'
+
+word_mapping:
+  source_text_field: segment_text
+  source_word_field: word
+  start_field: start
+  end_field: end
+  absolute_start_field: start_abs_seconds
+  absolute_end_field: end_abs_seconds
+  use_absolute_time_when_available: false
+  max_gap_ms_within_entity: 120
+  trim_surrounding_punctuation: true
+
+audio_redaction:
+  enabled: true
+  default_strategy: beep
+  available_strategies:
+    - beep
+    - lowpass
+  pad_ms: 120
+  merge_gap_ms: 150
+  min_duration_ms: 120
+
+  beep:
+    frequency_hz: 1000
+    target_dbfs: -23
+
+  lowpass:
+    cutoff_hz: 1250
+    normalize_target_dbfs: -23
+
+outputs:
+  write_detected_spans_json: true
+  write_redacted_audio: true
+  write_audit_csv: true
+  beep_audio_name: audio_redacted_beep.wav
+  lowpass_audio_name: audio_redacted_lowpass_1250hz.wav
+  spans_json_name: pii_spans.json
+  audit_csv_name: pii_audit.csv
+
+text_pseudonymization:
+  enabled: true
+  shared_scope:
+    - mingling1
+    - mingling2
+  strategies:
+    PERSON:
+      mode: consistent_token
+      template: "PERSON_{n}"
+      normalize: casefold_strip_edge_punctuation
+    EMAIL_ADDRESS:
+      mode: typed_placeholder
+      template: "[EMAIL_{n}]"
+      normalize: casefold
+    PHONE_NUMBER:
+      mode: typed_placeholder
+      template: "[PHONE_{n}]"
+      normalize: digits_only
+
+review:
+  enabled: true
+  flag_below_score: 0.60
+  always_log_matches: true

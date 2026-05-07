@@ -1,0 +1,8 @@
+numpy
+PyYAML
+soundfile
+torch
+faster-whisper
+whisperx
+presidio-analyzer
+spacy
