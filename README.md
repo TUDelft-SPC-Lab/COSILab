@@ -4,6 +4,8 @@ This repository contains data-processing utilities and model baselines for the C
 
 ![INGroup workflow](assets/ingroup_workflow_v2.png)
 
+Note: For historical reasons, COSI-Lab was called INGroup before.
+
 ## Components
 
 ### BadgeFramework
