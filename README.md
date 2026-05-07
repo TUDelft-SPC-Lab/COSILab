@@ -39,16 +39,17 @@ Model baselines and downstream feature-generation code.
 
 - `conversation_group/SAM3`: SAM3/SAM-Body4D-based mask generation for INGroup video segments.
 - `conversation_group/ViTPose`: ViTPose finetuning, SAM3-bbox-based keypoint inference, and conversion of keypoint JSON to dataframe PKL.
-- `intention`: intention-recognition baseline code.
+- `intention`: Gemma-based intention-recognition inference, pre-annotation survey analysis, and model-vs-human annotation similarity comparison.
 - SAM3 details: [baselines/conversation_group/SAM3/README.md](baselines/conversation_group/SAM3/README.md)
 - ViTPose details: [baselines/conversation_group/ViTPose/README.md](baselines/conversation_group/ViTPose/README.md)
+- Intention details: [baselines/intention/README.md](baselines/intention/README.md)
 
 ## Typical Flow
 
 1. Decode and synchronise badge sensor data with `BadgeFramework`.
 2. Merge/cut videos and prepare camera calibration with `video_postprocess`.
 3. Run audio/transcript redaction or mingling main-speaker pseudonymization with `audio_postprocess` when preparing release-safe audio-derived text.
-4. Generate masks with SAM3, run ViTPose, and convert model outputs into analysis-ready files under `baselines`.
+4. Generate masks with SAM3, run ViTPose, run intention inference, and compare model outputs with human annotations under `baselines`.
 
 Refer to the component READMEs for exact commands, expected folder layouts, and cluster-specific paths.
 
