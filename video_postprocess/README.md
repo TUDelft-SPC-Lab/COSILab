@@ -7,6 +7,14 @@ This folder contains utilities for GoPro-style video postprocessing. The two cor
 
 The scripts use `ffmpeg` / `ffprobe` through Python, so both command-line tools must be available on `PATH`.
 
+## Installation
+
+1. Install [uv](https://docs.astral.sh/uv/)
+2. Create a venv and install the dependencies
+    ```bash
+    uv sync
+    ```
+
 ## 1. Fix Corrupted Videos
 
 If a camera stopped recording because the GoPro battery died, repair the last chunk before doing any concatenation or segment cutting.
