@@ -9,8 +9,12 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.4.6",
+    "opencv-python>=4.13.0.92",
     "pandas>=3.0.3",
+    "python-ffmpeg>=2.0.12",
     "scikit-learn>=1.9.0",
+    "scipy>=1.17.1",
+    "tqdm>=4.68.3",
 ]
 
 [project.scripts]
