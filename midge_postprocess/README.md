@@ -1,6 +1,10 @@
-# BadgeFramework
+# Midge postprocess
 
-This directory contains tools for controlling Mingle/OpenBadge devices and parsing downloaded badge data.
+This file contains the explanation for the tools for controlling Mingle/OpenBadge devices and parsing downloaded badge data.
+
+The files can be found in [midge-code repository](https://github.com/TUDelft-SPC-Lab/midge-code/tree/v0.2.0%2Bcosilab-datacapture/BadgeFramework).
+
+To install please follow the instructions in the [README.md](https://github.com/TUDelft-SPC-Lab/midge-code/tree/v0.2.0%2Bcosilab-datacapture#requirements).
 
 Main files:
 
@@ -152,7 +156,7 @@ When `--plot TRUE`, it also writes simple time-series plots for accelerometer, g
 `hub.py` is an interactive multi-badge controller. It reads badge participant IDs and MAC addresses from:
 
 ```text
-ingroup_exp.csv
+cosilab_exp2.csv
 ```
 
 and adds runtime state columns:

@@ -8,13 +8,13 @@ Note: For historical reasons, COSI-Lab was called INGroup before.
 
 ## Components
 
-### BadgeFramework
+### midge_postprocess
 
-Sensor-device utilities for Mingle/OpenBadge data.
+Sensor-device utilities for midge data.
 
 - Decodes raw badge audio, timestamps, IMU, rotation, and scan binaries.
 - Provides the hub workflow for starting/stopping badges and periodically synchronising device clocks.
-- Details: [BadgeFramework/README.md](BadgeFramework/README.md)
+- Details: [midge_postprocess/README.md](midge_postprocess/README.md)
 
 ### video_postprocess
 
