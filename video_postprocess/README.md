@@ -28,7 +28,7 @@ fix_gopro_battery_dies_video.py
 Run:
 
 ```bash
-python fix_gopro_battery_dies_video.py \
+uv run python fix_gopro_battery_dies_video.py \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/fixed_videos
 ```
@@ -58,7 +58,7 @@ raw_videos/
 Run:
 
 ```bash
-python concat_videos.py \
+uv run python concat_videos.py \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/concatenated_videos
 ```
@@ -105,7 +105,7 @@ concatenated_videos/
 Cut a relative interval from every camera video:
 
 ```bash
-python extract_segment_from_video.py \
+uv run python extract_segment_from_video.py \
   --source-directory /path/to/concatenated_videos \
   --target-directory /path/to/output_segments \
   --start-time 00:01:00 \
@@ -117,7 +117,7 @@ With no `--use-timecode`, `--start-time` and `--end-time` are interpreted as off
 Cut an absolute timecode interval:
 
 ```bash
-python extract_segment_from_video.py \
+uv run python extract_segment_from_video.py \
   --source-directory /path/to/concatenated_videos \
   --target-directory /path/to/output_segments \
   --start-time 13:45:00 \
@@ -154,7 +154,7 @@ The script uses stream copy (`-c copy`) and disables data streams (`-dn`) to avo
 Set `CAMERA_TO_PROCESS` to the camera filename stem:
 
 ```bash
-CAMERA_TO_PROCESS=cam02 python extract_segment_from_video.py \
+CAMERA_TO_PROCESS=cam02 uv run python extract_segment_from_video.py \
   --source-directory /path/to/concatenated_videos \
   --target-directory /path/to/output_segments \
   --start-time 13:45:00 \
@@ -174,7 +174,7 @@ For the current INGroup GoPro annotation split, `cut_gopro_annotation_segments.p
 Run:
 
 ```bash
-python cut_gopro_annotation_segments.py \
+uv run python cut_gopro_annotation_segments.py \
   --group-06-10-directory /path/to/group_06_10_concatenated \
   --group-01-05-directory /path/to/group_01_05_concatenated \
   --target-directory /path/to/annotation_segments
@@ -234,7 +234,7 @@ The script sorts camera folders and image filenames. Images with the same sorted
 Run:
 
 ```bash
-python generate_calib_project.py /path/to/calib_images \
+uv run python generate_calib_project.py /path/to/calib_images \
   --output-filename /path/to/calib_images/calib-project.json
 ```
 
@@ -259,7 +259,7 @@ convert_camera_calibration.py
 Convert to IDIAP-style per-camera JSON files:
 
 ```bash
-python convert_camera_calibration.py \
+uv run python convert_camera_calibration.py \
   --calibrator-file /path/to/solved-calib-project.json \
   --camera-format idiap \
   --output-directory /path/to/camera_params \
@@ -295,7 +295,7 @@ tvec
 Convert to EasyMocap format instead:
 
 ```bash
-python convert_camera_calibration.py \
+uv run python convert_camera_calibration.py \
   --calibrator-file /path/to/solved-calib-project.json \
   --camera-format easymocap \
   --output-directory /path/to/easymocap_camera \
@@ -339,7 +339,7 @@ calibrator_intrinsics/
 Run:
 
 ```bash
-python convert_idiap_to_calibrator.py \
+uv run python convert_idiap_to_calibrator.py \
   --idiap-extrinsics-directory /path/to/idiap_extrinsics \
   --calibrator-intrinsics-directory /path/to/calibrator_intrinsics \
   --output-directory /path/to/combined_calibrator \
@@ -394,7 +394,7 @@ video_postprocess/
     easymocap.py
 ```
 
-Required Python packages for video concatenation and segment cutting:
+Required uv run python packages for video concatenation and segment cutting:
 
 ```text
 click
@@ -405,7 +405,7 @@ python-ffmpeg
 winfiletime
 ```
 
-Additional Python packages for camera calibration utilities:
+Additional uv run python packages for camera calibration utilities:
 
 ```text
 opencv-python
