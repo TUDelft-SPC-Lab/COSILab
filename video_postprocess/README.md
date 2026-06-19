@@ -10,6 +10,11 @@ The scripts use `ffmpeg` / `ffprobe` through Python, so both command-line tools 
 ## Installation
 
 1. Install [uv](https://docs.astral.sh/uv/)
+2. Clone this repo
+3. Go into this folder
+    ```bash
+    cd COSILab/video_postprocess
+    ```
 2. Create a venv and install the dependencies
     ```bash
     uv sync
