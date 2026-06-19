@@ -7,7 +7,27 @@ This folder contains utilities for GoPro-style video postprocessing. The two cor
 
 The scripts use `ffmpeg` / `ffprobe` through Python, so both command-line tools must be available on `PATH`.
 
-## 1. Concatenate Raw Video Segments by Timecode
+## 1. Fix Corrupted Videos
+
+If a camera stopped recording because the GoPro battery died, repair the last chunk before doing any concatenation or segment cutting.
+
+Use:
+
+```text
+fix_gopro_battery_dies_video.py
+```
+
+Run:
+
+```bash
+python fix_gopro_battery_dies_video.py \
+  --source-directory /path/to/raw_videos \
+  --target-directory /path/to/fixed_videos
+```
+
+The script checks the last video in each camera folder. If it is truncated, it repairs it with [untrunc](https://github.com/anthwlock/untrunc) and writes the fixed file into the target directory, preserving the camera subfolder layout.
+
+## 2. Concatenate Raw Video Segments by Timecode
 
 Use:
 
@@ -57,7 +77,7 @@ concatenated_videos/
 
 The resulting concatenated file keeps the first raw segment's embedded timecode as the output timecode. This is what allows later segment extraction to use absolute clock-style timecode.
 
-## 2. Cut Video Segments From a Specific Interval
+## 3. Cut Video Segments From a Specific Interval
 
 Use:
 
@@ -162,7 +182,7 @@ annotation_segments/
 
 and writes one cut video per camera into each segment folder.
 
-## 3. Camera Calibration Pipeline
+## 4. Camera Calibration Pipeline
 
 The camera calibration utilities in this folder support this workflow:
 
