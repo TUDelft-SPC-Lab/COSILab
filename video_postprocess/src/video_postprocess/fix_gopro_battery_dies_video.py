@@ -5,7 +5,7 @@ from pathlib import Path
 import click
 from tqdm import tqdm
 
-from capturesystem.video_utils import get_video_duration_in_seconds
+from video_postprocess.video_utils import get_video_duration_in_seconds
 
 
 def fix_truncated_video(

@@ -8,7 +8,7 @@ import imageio
 import rawpy
 from tqdm import tqdm
 
-from capturesystem.utils import get_camera_to_process, get_num_threads
+from video_postprocess.utils import get_camera_to_process, get_num_threads
 
 
 def convert_single_dng_to_png(source_dng_path: Path, target_path: Path) -> str:

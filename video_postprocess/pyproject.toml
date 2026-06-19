@@ -1,5 +1,5 @@
 [project]
-name = "capturesystem"
+name = "video_postprocess"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-capturesystem = "capturesystem:main"
+video_postprocess = "video_postprocess:main"
 
 [build-system]
 requires = ["uv_build>=0.11.21,<0.12.0"]

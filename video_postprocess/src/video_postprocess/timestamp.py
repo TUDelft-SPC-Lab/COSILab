@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ffmpeg import FFmpeg
 
-from capturesystem.timecode import VideoTimecode
+from video_postprocess.timecode import VideoTimecode
 
 
 def timestamp_video(source: Path, target: Path, timecode: VideoTimecode):

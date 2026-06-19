@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 from tqdm import tqdm
 
-from capturesystem.timecode import VideoTimecode
+from video_postprocess.timecode import VideoTimecode
 
 
 def get_audio_sample_rate(video_path: Path) -> int:

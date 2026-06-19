@@ -7,9 +7,9 @@ import click
 from ffmpeg import FFmpeg, Progress
 from tqdm import tqdm
 
-from capturesystem.timecode import VideoTimecode
-from capturesystem.utils import get_camera_to_process, get_num_threads
-from capturesystem.video_utils import (
+from video_postprocess.timecode import VideoTimecode
+from video_postprocess.utils import get_camera_to_process, get_num_threads
+from video_postprocess.video_utils import (
     get_video_duration_in_seconds,
     get_video_framerate,
 )

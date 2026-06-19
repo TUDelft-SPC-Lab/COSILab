@@ -11,7 +11,7 @@ import numpy as np
 import winfiletime  # type:ignore noqa:PGH003
 from pydantic import AfterValidator, BaseModel
 
-from capturesystem.video_utils import get_video_framerate
+from video_postprocess.video_utils import get_video_framerate
 
 
 def _is_hours(value: int) -> bool:

@@ -4,12 +4,12 @@ from tempfile import TemporaryDirectory
 
 import click
 
-from capturesystem.processed_images_to_video import (
+from video_postprocess.processed_images_to_video import (
     VideoCodecs,
     convert_png_to_mp4,
 )
-from capturesystem.raw_images_to_processed_images import convert_dng_to_png
-from capturesystem.utils import SimplePath
+from video_postprocess.raw_images_to_processed_images import convert_dng_to_png
+from video_postprocess.utils import SimplePath
 
 
 @click.command()

@@ -6,11 +6,11 @@ from typing import Any
 
 import click
 
-from capturesystem.camera_calibration.easymocap import (
+from video_postprocess.camera_calibration.easymocap import (
     save_extrinsic_easymocap,
     save_intrinsic_easymocap,
 )
-from capturesystem.camera_calibration.idiap import (
+from video_postprocess.camera_calibration.idiap import (
     save_extrinsic_idiap,
     save_intrinsic_idiap,
 )

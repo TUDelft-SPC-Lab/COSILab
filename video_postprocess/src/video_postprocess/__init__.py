@@ -1,5 +1,5 @@
 """
-capturesystem: Collection of scripts for processing data in the CaptureLab.
+video_postprocess: Collection of scripts for processing data in the CaptureLab.
 """  # noqa: E501, RUF100
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from importlib.metadata import Distribution, version
 
 
 def _is_editable() -> bool:
-    dist = Distribution.from_name("capturesystem")
+    dist = Distribution.from_name("video_postprocess")
 
     if sys.version_info >= (3, 13):
         try:

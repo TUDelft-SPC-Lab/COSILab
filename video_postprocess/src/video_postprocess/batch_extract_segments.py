@@ -4,7 +4,7 @@ from pathlib import Path
 
 import click
 
-from capturesystem.extract_segment_from_video import (
+from video_postprocess.extract_segment_from_video import (
     extract_segment_from_video,
     str_to_timedelta,
 )

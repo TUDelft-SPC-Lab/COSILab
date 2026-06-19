@@ -412,4 +412,4 @@ ffmpeg
 ffprobe
 ```
 
-Note: the scripts import modules as `capturesystem.<module>`. Keep the package import path configured the same way as the current project does, or update those imports to match the directory name if you run the folder standalone.
+Note: the scripts import modules as `video_postprocess.<module>`. Keep the package import path configured the same way as the current project does, or update those imports to match the directory name if you run the folder standalone.

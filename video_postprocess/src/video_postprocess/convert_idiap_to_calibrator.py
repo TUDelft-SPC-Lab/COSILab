@@ -7,7 +7,7 @@ import click
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from capturesystem.camera_calibration.idiap import (
+from video_postprocess.camera_calibration.idiap import (
     convert_extrinsics_to_calibrator,
 )
 
