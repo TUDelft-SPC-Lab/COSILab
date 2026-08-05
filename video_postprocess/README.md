@@ -1,9 +1,12 @@
 # Video Postprocess
 
-This folder contains utilities for GoPro-style video postprocessing. The two core functions documented here are:
+This folder contains utilities for GoPro-style video postprocessing. The core functions documented here are:
 
 1. Concatenate raw per-camera video chunks into one continuous video per camera.
-2. Cut video segments from a requested interval, either by relative video time or by embedded video timecode.
+2. Cut a frame-accurate video segment for every camera directly from the raw per-camera video chunks, either by relative time or by embedded video timecode.
+3. Split a requested interval of the raw per-camera video chunks into numbered frame images.
+
+Segment cutting and frame splitting both correct for cameras that record at a true rate (e.g. 59.94 fps) slightly off from the nominal 60 fps clock that timecodes and requested times are expressed against, so multi-file, multi-hour recordings stay frame-accurate.
 
 The scripts use `ffmpeg` / `ffprobe` through Python, so both command-line tools must be available on `PATH`.
 
@@ -22,7 +25,7 @@ The scripts use `ffmpeg` / `ffprobe` through Python, so both command-line tools 
 
 ## 1. Fix Corrupted Videos
 
-If a camera stopped recording because the GoPro battery died, repair the last chunk before doing any concatenation or segment cutting.
+If a camera stopped recording because the GoPro battery died, repair the last chunk before doing any concatenation, segment cutting, or frame splitting.
 
 Use:
 
@@ -88,7 +91,9 @@ concatenated_videos/
   cam02.mp4
 ```
 
-The resulting concatenated file keeps the first raw segment's embedded timecode as the output timecode. This is what allows later segment extraction to use absolute clock-style timecode.
+The resulting concatenated file keeps the first raw segment's embedded timecode as the output timecode.
+
+This step is now independent of segment cutting and frame splitting below — both of those work directly on the raw per-camera chunks, so only run this if you want a single continuous file per camera for other purposes (e.g. playback, archiving).
 
 ## 3. Cut Video Segments From a Specific Interval
 
@@ -98,80 +103,78 @@ Use:
 extract_segment_from_video.py
 ```
 
-This script expects a directory containing concatenated camera videos:
+This script works directly on raw per-camera video chunks — the same source layout as `concat_videos.py` above, **not** its concatenated output:
 
 ```text
-concatenated_videos/
-  cam01.mp4
-  cam02.mp4
-  cam03.mp4
+raw_videos/
+  cam01/
+    GX010001.MP4
+    GX020001.MP4
+  cam02/
+    GX010002.MP4
+    GX020002.MP4
 ```
 
-Cut a relative interval from every camera video:
+Cut a relative interval from every camera:
 
 ```bash
 uv run python extract_segment_from_video.py \
-  --source-directory /path/to/concatenated_videos \
+  --source-directory /path/to/raw_videos \
   --target-directory /path/to/output_segments \
   --start-time 00:01:00 \
   --end-time 00:02:00
 ```
 
-With no `--use-timecode`, `--start-time` and `--end-time` are interpreted as offsets from the beginning of each video.
+With no `--use-timecode`, `--start-time` and `--end-time` are interpreted as offsets from the first frame of the first video in each camera folder.
 
 Cut an absolute timecode interval:
 
 ```bash
 uv run python extract_segment_from_video.py \
-  --source-directory /path/to/concatenated_videos \
+  --source-directory /path/to/raw_videos \
   --target-directory /path/to/output_segments \
   --start-time 13:45:00 \
   --end-time 13:45:30 \
   --use-timecode
 ```
 
-With `--use-timecode`, the script:
+With `--use-timecode`, start/end times are matched directly against each camera's embedded video timecodes, spanning as many chunk files as needed.
 
-1. Reads each video's embedded start timecode.
-2. Converts the requested start/end times to timedeltas.
-3. Subtracts the embedded video start timecode from the requested times.
-4. Passes the resulting relative interval to ffmpeg.
-5. Writes the output with a new embedded timecode matching the cut segment start.
+Times can be given as `HH:MM:SS:FF`, `HH:MM:SS`, `MM:SS` or `SS` (`FF` is a frame number).
 
-For example, if `cam01.mp4` starts at embedded timecode `13:45:00:00`, then:
+For each camera, the script:
 
-```text
---start-time 13:46:00 --end-time 13:46:30 --use-timecode
-```
+1. Reads every chunk's embedded timecode, framerate and frame count with `video_segments.collect_camera_video_infos()`.
+2. Resolves the requested start/end time to an exact `(file, frame)` position, correcting for the camera's true framerate against the nominal 60 fps clock the times are expressed against.
+3. Builds the output by stream-copying whole frame ranges and re-encoding only the partial GOPs at the cut edges (so the cut is frame-exact without re-encoding footage that doesn't need it).
+4. Concatenates the parts into a single output file per camera.
 
-cuts from relative `00:01:00` to `00:01:30`.
-
-The output filename includes the requested start and end labels:
+The output is one file per camera, named after the camera folder:
 
 ```text
-cam01_13460000_13463000.mp4
+output_segments/
+  cam01.mp4
+  cam02.mp4
 ```
-
-The script uses stream copy (`-c copy`) and disables data streams (`-dn`) to avoid `tmcd` stream errors.
 
 ### Process One Camera Only
 
-Set `CAMERA_TO_PROCESS` to the camera filename stem:
+Set `CAMERA_TO_PROCESS` to the camera folder name:
 
 ```bash
 CAMERA_TO_PROCESS=cam02 uv run python extract_segment_from_video.py \
-  --source-directory /path/to/concatenated_videos \
+  --source-directory /path/to/raw_videos \
   --target-directory /path/to/output_segments \
   --start-time 13:45:00 \
   --end-time 13:45:30 \
   --use-timecode
 ```
 
-Only `concatenated_videos/cam02.mp4` will be processed.
+Only `cam02` will be processed.
 
 ### Fixed 30-Second Annotation Segments
 
-For the current INGroup GoPro annotation split, `cut_gopro_annotation_segments.py` wraps `extract_segment_from_video.py` and cuts fixed 30-second timecode segments:
+For the current INGroup GoPro annotation split, `cut_gopro_annotation_segments.py` wraps `extract_segment_from_video.py` and cuts fixed 30-second timecode segments from the raw per-camera video chunks:
 
 - Group cameras `06-10`: `13:45:00` to `14:20:00`
 - Group cameras `01-05`: `14:52:00` to `15:27:00`
@@ -180,8 +183,8 @@ Run:
 
 ```bash
 uv run python cut_gopro_annotation_segments.py \
-  --group-06-10-directory /path/to/group_06_10_concatenated \
-  --group-01-05-directory /path/to/group_01_05_concatenated \
+  --group-06-10-directory /path/to/group_06_10_raw_videos \
+  --group-01-05-directory /path/to/group_01_05_raw_videos \
   --target-directory /path/to/annotation_segments
 ```
 
@@ -195,7 +198,77 @@ annotation_segments/
 
 and writes one cut video per camera into each segment folder.
 
-## 4. Camera Calibration Pipeline
+### Batch Extract Predefined Segments
+
+`batch_extract_segments.py` calls `extract_segment_from_video.py` once for each of a hard-coded list of 30-second timecode segments (`TIME_SEGS_1` / `TIME_SEGS_2`, edit the script to change them):
+
+```bash
+uv run python batch_extract_segments.py \
+  --source-directory /path/to/raw_videos \
+  --target-directory /path/to/output_segments \
+  --segment-set both \
+  --use-timecode
+```
+
+Every segment in a run is written to the same `--target-directory`, and each camera's output file is always named `<camera>.mp4`, so **only the last segment of a run survives** in that directory. Use a separate `--target-directory` per segment (or per small batch) if you need to keep more than one.
+
+## 4. Split Video Into Frame Images
+
+Use:
+
+```text
+split_video_into_frames.py
+```
+
+Like segment cutting, this works directly on raw per-camera video chunks:
+
+```text
+raw_videos/
+  cam01/
+    GX010001.MP4
+  cam02/
+    GX010002.MP4
+```
+
+Run:
+
+```bash
+uv run python split_video_into_frames.py \
+  --source-directory /path/to/raw_videos \
+  --target-directory /path/to/frames \
+  --start-time 13:45:00 \
+  --end-time 13:45:30 \
+  --use-timecode
+```
+
+`--start-time`, `--end-time` and `--use-timecode` behave the same as in `extract_segment_from_video.py`, including the frame-rate correction and support for spanning multiple chunk files.
+
+Frames are written as `%09d.png`, numbered continuously per camera even when the requested interval spans several chunk files:
+
+```text
+frames/
+  cam01/
+    000000000.png
+    000000001.png
+  cam02/
+    000000000.png
+    000000001.png
+```
+
+To sample instead of extracting every frame, pass `--every-n-frames`:
+
+```bash
+uv run python split_video_into_frames.py \
+  --source-directory /path/to/raw_videos \
+  --target-directory /path/to/frames \
+  --every-n-frames 10
+```
+
+This keeps every 10th frame of the requested interval; the sampling grid stays anchored to the start of the interval even across a chunk-file boundary.
+
+`CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
+
+## 5. Camera Calibration Pipeline
 
 The camera calibration utilities in this folder support this workflow:
 
@@ -362,13 +435,15 @@ The script:
 
 ## Minimal Files Needed
 
-If you only want to keep the two functions above, the required runtime files are:
+If you only want to keep the concatenation, segment-cutting, and frame-splitting functions above, the required runtime files are:
 
 ```text
 video_postprocess/
   __init__.py
   concat_videos.py
   extract_segment_from_video.py
+  split_video_into_frames.py
+  video_segments.py
   timecode.py
   utils.py
   video_utils.py
@@ -383,7 +458,7 @@ video_postprocess/
   py.typed                           # optional typing marker, not needed at runtime
 ```
 
-Everything else in `video_postprocess/` is unrelated to concatenating videos or cutting video intervals and can be removed for this reduced workflow.
+Everything else in `video_postprocess/` is unrelated to concatenating videos, cutting video intervals, or splitting videos into frames, and can be removed for this reduced workflow.
 
 If you also want to keep camera calibration support, keep these additional files:
 
@@ -399,21 +474,22 @@ video_postprocess/
     easymocap.py
 ```
 
-Required uv run python packages for video concatenation and segment cutting:
+Required uv run python packages for video concatenation, segment cutting, and frame splitting:
 
 ```text
+av
 click
 numpy
+opencv-python
 pydantic
-tqdm
 python-ffmpeg
+tqdm
 winfiletime
 ```
 
 Additional uv run python packages for camera calibration utilities:
 
 ```text
-opencv-python
 PyYAML
 scipy
 ```
