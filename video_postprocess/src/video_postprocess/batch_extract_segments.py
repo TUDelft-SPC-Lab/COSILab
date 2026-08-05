@@ -4,10 +4,7 @@ from pathlib import Path
 
 import click
 
-from video_postprocess.extract_segment_from_video import (
-    extract_segment_from_video,
-    str_to_timedelta,
-)
+from video_postprocess.extract_segment_from_video import extract_segment_from_video
 
 # Time segments to extract
 TIME_SEGS_1 = [
@@ -118,8 +115,8 @@ def main(
             extract_segment_from_video(
                 source_directory=source_directory,
                 target_directory=target_directory,
-                start_time=str_to_timedelta(start_time_str),
-                end_time=str_to_timedelta(end_time_str),
+                start_time=start_time_str,
+                end_time=end_time_str,
                 use_timecode=use_timecode,
                 every_n_frames=None,
             )
