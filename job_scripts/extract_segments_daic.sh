@@ -39,7 +39,11 @@
 #
 # Common optional arguments:
 #   -c <name>   process only this camera subdirectory (CAMERA_TO_PROCESS)
-#   --sif <path> / --repo <dir> / --baked-code
+#   --sif <path> / --repo <dir>
+#
+# The code always comes from the checkout at --repo (default below), never from
+# the copy inside the image; the job aborts if that checkout is missing or is not
+# visible inside the container.
 #
 # Each source directory holds one subdirectory per camera, and each of those the
 # raw GH*.MP4 / GX*.MP4 chunks:
@@ -81,12 +85,11 @@ TARGET_DIR="${COSILAB}/data_temp/video_clips_30s_timestamp_fixed"
 SEGMENT_SET="both"
 USE_TIMECODE=0
 CAMERA=""
-USE_BAKED_CODE=0
 
 usage() {
   echo "Usage: sbatch job_scripts/extract_segments_daic.sh [--mode annotation] [-g6 <dir>|none] [-g5 <dir>|none] [-t <dir>] [-c <camera>]"
   echo "       sbatch job_scripts/extract_segments_daic.sh --mode batch -s <dir> -t <dir> [--segment-set 1|2|both] [--use-timecode] [-c <camera>]"
-  echo "       optional everywhere: --sif <path> --repo <dir> --baked-code"
+  echo "       optional everywhere: --sif <path> --repo <dir>"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -130,10 +133,6 @@ while [[ $# -gt 0 ]]; do
     --repo)
       REPO_DIR="${2:-}"
       shift 2
-      ;;
-    --baked-code)
-      USE_BAKED_CODE=1
-      shift
       ;;
     -h|--help)
       usage
@@ -230,17 +229,43 @@ JOB_TMP="/tmp/video_postprocess_${SLURM_JOB_ID:-$$}"
 mkdir -p "$JOB_TMP"
 trap 'rm -rf "$JOB_TMP"' EXIT
 
-env_args=(--env "CAMERA_TO_PROCESS=$CAMERA" --env "TMPDIR=$JOB_TMP")
+SRC_DIR="$REPO_DIR/video_postprocess/src"
 
-# Run the checkout's code by default so edits take effect without a rebuild; the
-# image's own copy is the fallback.
-if [ "$USE_BAKED_CODE" = "1" ]; then
-  echo "[INFO] Using the code baked into $SIF"
-elif [ -d "$REPO_DIR/video_postprocess/src" ]; then
-  echo "[INFO] Using code from $REPO_DIR/video_postprocess/src"
-  env_args+=(--env "PYTHONPATH=$REPO_DIR/video_postprocess/src")
-else
-  echo "[WARN] $REPO_DIR/video_postprocess/src not found; falling back to the code baked into the image."
+# The job always runs the checkout's code, never the copy the image was built
+# with. That copy only exists because `uv sync` installs the project to satisfy
+# importlib.metadata; it is frozen at build time and silently misses later fixes,
+# so falling back to it is treated as an error rather than a default.
+if [ ! -d "$SRC_DIR" ]; then
+  echo "[ERROR] Checkout not found: $SRC_DIR" >&2
+  echo "        Pass --repo <dir> or export REPO_DIR to point at your COSILab checkout." >&2
+  exit 2
+fi
+
+echo "[INFO] Using code from $SRC_DIR (commit $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown))"
+
+bind_args=(-B "$HOME:$HOME" -B /tudelft.net/:/tudelft.net/ -B /tmp:/tmp)
+env_args=(--env "CAMERA_TO_PROCESS=$CAMERA" --env "TMPDIR=$JOB_TMP" --env "PYTHONPATH=$SRC_DIR")
+
+# The checkout existing on the host is not enough: it also has to fall under one
+# of the bind mounts above. Otherwise PYTHONPATH points at nothing inside the
+# container and python quietly imports the image's copy instead - the exact
+# failure this design is meant to make impossible. Resolve the module once and
+# confirm where it actually came from.
+echo "[INFO] Verifying the container resolves video_postprocess from the checkout..."
+if ! apptainer exec --containall "${bind_args[@]}" "${env_args[@]}" "$SIF" \
+  python -c '
+import os, sys
+expected = os.path.realpath(sys.argv[1])
+import video_postprocess
+actual = os.path.realpath(os.path.dirname(os.path.dirname(video_postprocess.__file__)))
+if actual != expected:
+    sys.exit(
+        f"[ERROR] Container imported video_postprocess from {actual}, not {expected}.\n"
+        "        The checkout is not visible inside the container - add a bind mount for it."
+    )
+print(f"[INFO] container resolved video_postprocess from {actual}")
+' "$SRC_DIR"; then
+  exit 2
 fi
 
 if [ "$MODE" = "annotation" ]; then
@@ -270,10 +295,8 @@ echo ""
 
 apptainer exec \
   --containall \
+  "${bind_args[@]}" \
   "${env_args[@]}" \
-  -B "$HOME:$HOME" \
-  -B /tudelft.net/:/tudelft.net/ \
-  -B /tmp:/tmp \
   "$SIF" \
   "${cmd[@]}"
 
