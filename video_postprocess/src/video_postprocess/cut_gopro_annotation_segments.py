@@ -55,14 +55,16 @@ def extract_segments(
     type=click.Path(
         file_okay=False, dir_okay=True, writable=False, path_type=Path
     ),
-    required=True,
+    default=None,
+    help="Camera directories for group 06-10; its 13:45:00-14:20:00 range is skipped when omitted",
 )
 @click.option(
     "--group-01-05-directory",
     type=click.Path(
         file_okay=False, dir_okay=True, writable=False, path_type=Path
     ),
-    required=True,
+    default=None,
+    help="Camera directories for group 01-05; its 14:52:00-15:27:00 range is skipped when omitted",
 )
 @click.option(
     "--target-directory",
@@ -72,23 +74,29 @@ def extract_segments(
     required=True,
 )
 def main(
-    group_06_10_directory: Path,
-    group_01_05_directory: Path,
+    group_06_10_directory: Path | None,
+    group_01_05_directory: Path | None,
     target_directory: Path,
 ) -> None:
+    if group_06_10_directory is None and group_01_05_directory is None:
+        error_msg = "At least one of --group-06-10-directory / --group-01-05-directory is required."
+        raise click.UsageError(error_msg)
+
     target_directory.mkdir(parents=True, exist_ok=True)
-    extract_segments(
-        group_06_10_directory,
-        target_directory,
-        "13:45:00",
-        "14:20:00",
-    )
-    extract_segments(
-        group_01_05_directory,
-        target_directory,
-        "14:52:00",
-        "15:27:00",
-    )
+    if group_06_10_directory is not None:
+        extract_segments(
+            group_06_10_directory,
+            target_directory,
+            "13:45:00",
+            "14:20:00",
+        )
+    if group_01_05_directory is not None:
+        extract_segments(
+            group_01_05_directory,
+            target_directory,
+            "14:52:00",
+            "15:27:00",
+        )
 
 
 if __name__ == "__main__":
