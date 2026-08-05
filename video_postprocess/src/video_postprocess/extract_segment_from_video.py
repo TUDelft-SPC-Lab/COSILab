@@ -18,6 +18,7 @@ from video_postprocess.video_segments import (
     collect_camera_video_infos,
     resolve_end_position,
     resolve_start_position,
+    timecode_at_local_frame,
 )
 
 # Quality target for the re-encoded head/tail edges of a cut. CRF rather than a bit_rate, since these
@@ -173,7 +174,7 @@ def build_camera_segment_parts(
     return parts
 
 
-def concat_parts(parts: list[Path], output_path: Path, tmp_dir: Path) -> None:
+def concat_parts(parts: list[Path], output_path: Path, tmp_dir: Path, timecode: str) -> None:
     concat_list_path = tmp_dir / "concat.txt"
     with concat_list_path.open("w", encoding="utf-8") as concat_list_file:
         for part in parts:
@@ -188,6 +189,7 @@ def concat_parts(parts: list[Path], output_path: Path, tmp_dir: Path) -> None:
             "-safe", "0",
             "-i", str(concat_list_path),
             "-c", "copy",
+            "-timecode", timecode,
             str(output_path),
         ],
         check=True,
@@ -215,11 +217,12 @@ def extract_camera_section(
         return
 
     output_path = target_directory / f"{camera_directory.name}.mp4"
+    output_timecode = timecode_at_local_frame(infos[start.file_index], start.local_frame).to_ffmpeg_format()
 
     with tempfile.TemporaryDirectory(prefix=f"extract_section_{camera_directory.name}_") as tmp_dir_name:
         tmp_dir = Path(tmp_dir_name)
         parts = build_camera_segment_parts(infos, start, end, tmp_dir)
-        concat_parts(parts, output_path, tmp_dir)
+        concat_parts(parts, output_path, tmp_dir, output_timecode)
 
     print(f"Wrote '{output_path}' for camera '{camera_directory.name}'.")
 

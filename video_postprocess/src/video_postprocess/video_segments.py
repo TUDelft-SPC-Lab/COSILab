@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from datetime import timedelta
 from fractions import Fraction
 from pathlib import Path
 
@@ -62,6 +63,7 @@ class VideoFileInfo:
     frame_count: int
     nominal_start_frame: int
     physical_frames_before: int
+    start_timecode: VideoTimecode
 
     @property
     def nominal_end_frame(self) -> int:
@@ -96,10 +98,18 @@ def collect_camera_video_infos(camera_directory: Path) -> list[VideoFileInfo]:
                 frame_count=frame_count,
                 nominal_start_frame=timecode.to_total_frames(FPS_60),
                 physical_frames_before=physical_frames_before,
+                start_timecode=timecode,
             )
         )
         physical_frames_before += frame_count
     return infos
+
+
+def timecode_at_local_frame(info: VideoFileInfo, local_frame: int) -> VideoTimecode:
+    """The embedded-timecode clock time of `local_frame` within `info`'s file: its own start
+    timecode advanced by `local_frame` at the file's actual (physical) framerate."""
+    elapsed = timedelta(seconds=float(local_frame / info.framerate))
+    return VideoTimecode.from_timedelta(info.start_timecode.to_timedelta() + elapsed, info.framerate)
 
 
 def correct_for_fps_59_94(

@@ -147,9 +147,9 @@ For each camera, the script:
 1. Reads every chunk's embedded timecode, framerate and frame count with `video_segments.collect_camera_video_infos()`.
 2. Resolves the requested start/end time to an exact `(file, frame)` position, correcting for the camera's true framerate against the nominal 60 fps clock the times are expressed against.
 3. Builds the output by stream-copying whole frame ranges and re-encoding only the partial GOPs at the cut edges (so the cut is frame-exact without re-encoding footage that doesn't need it).
-4. Concatenates the parts into a single output file per camera.
+4. Concatenates the parts into a single output file per camera, embedding the actual clock timecode of the resolved start frame (the source file's own embedded timecode advanced to that frame) as the output's `-timecode`.
 
-The output is one file per camera, named after the camera folder:
+The output is one file per camera, named after the camera folder, with its own embedded start timecode matching the cut:
 
 ```text
 output_segments/
