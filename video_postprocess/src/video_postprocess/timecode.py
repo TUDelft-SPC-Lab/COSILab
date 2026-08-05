@@ -193,13 +193,18 @@ class VideoTimecode(BaseModel):
         The milliseconds of the time are used
         to determine the frame number inside the given time.
         """
-        hours = t.days * 24 + (t.seconds // 3600)
-        minutes = (t.seconds % 3600) // 60
+        # Rounding the sub-second remainder can land on a whole second's worth of frames, which
+        # is not a valid frame number: at 59.94 fps anything from .992157 s on rounds up to 60.
+        # That extra frame is the next second's frame 0, so carry it instead of overflowing.
+        frames = round(framerate * t.microseconds / 1000000)
+        second_carry, frames = divmod(frames, round(framerate))
+
+        total_seconds = t.days * 86400 + t.seconds + second_carry
         return VideoTimecode(
-            hours=hours,
-            minutes=minutes,
-            seconds=t.seconds % 60,
-            frames=round(framerate * t.microseconds / 1000000),
+            hours=(total_seconds // 3600) % 24,
+            minutes=(total_seconds % 3600) // 60,
+            seconds=total_seconds % 60,
+            frames=frames,
             fps=framerate,
         )
 
