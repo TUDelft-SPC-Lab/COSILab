@@ -90,9 +90,12 @@ def collect_camera_video_infos(camera_directory: Path) -> list[VideoFileInfo]:
     for video_path in sorted(camera_directory.glob("*.mp4")):
         try:
             framerate = get_video_framerate(video_path)
-        except OSError:
-            # e.g. a moov atom not found, as happens when a GoPro's battery dies mid-recording.
-            continue
+        except (OSError, subprocess.CalledProcessError) as e:
+            # moov atom not found, as happens when a GoPro's battery dies mid-recording.
+            if "moov atom not found" in e.stdout.decode():
+                continue
+            else:
+                raise
         frame_count = get_video_total_frame_num(video_path)
         timecode = VideoTimecode.from_video(video_path)
         infos.append(
