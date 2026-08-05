@@ -10,161 +10,19 @@ from pathlib import Path
 import av
 import click
 from tqdm import tqdm
-import cv2
-from datetime import timedelta
-from video_postprocess.split_video_into_frames import (
-    get_video_framerate,
-)
-from video_postprocess.timecode import VideoTimecode
-from video_postprocess.utils import get_camera_to_process
 
-# Nominal (non-drop) frame rate that start-time/end-time/timecodes are expressed against, matching
-# split_video_into_frames.py. Actual 59.94 fps footage is corrected against this via correct_for_fps_59_94.
-FPS_60 = 60
+from video_postprocess.utils import get_camera_to_process
+from video_postprocess.video_segments import (
+    FramePosition,
+    VideoFileInfo,
+    collect_camera_video_infos,
+    resolve_end_position,
+    resolve_start_position,
+)
 
 # Quality target for the re-encoded head/tail edges of a cut. CRF rather than a bit_rate, since these
 # segments are only ever a few frames long, too short for bitrate-mode rate control to ramp up.
 RE_ENCODE_CRF = "18"
-
-def get_video_total_frame_num(video_path: Path) -> int:
-    capture = cv2.VideoCapture(str(video_path))
-    try:
-        if not capture.isOpened():
-            error_msg = f"Could not open video '{video_path}'."
-            raise OSError(error_msg)
-        return int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    finally:
-        capture.release()
-
-def parse_time_str_to_frames(time_str: str | None, framerate: Fraction | int | float) -> int | None:
-    """Convert a time string in HH:MM:SS:FF, HH:MM:SS, MM:SS or SS format into a total frame count.
-
-    Everything is computed directly in whole frames against the nominal (rounded) framerate, so no
-    precision is lost by round-tripping through seconds or microseconds.
-    """
-    if time_str is None:
-        return None
-
-    fr = round(framerate)
-
-    parts = time_str.split(":")
-    if len(parts) == 4:
-        hours, minutes, seconds, frames = map(int, parts)
-    else:
-        values = list(map(int, parts))
-        if len(values) == 2:
-            values = [0, *values]
-        elif len(values) == 1:
-            values = [0, 0, *values]
-        elif len(values) != 3:
-            error_msg = "Time string must be in HH:MM:SS:FF, HH:MM:SS, MM:SS or SS format."
-            raise ValueError(error_msg)
-        hours, minutes, seconds = values
-        frames = 0
-
-    return ((hours * 3600 + minutes * 60 + seconds) * fr) + frames
-
-@dataclass(frozen=True)
-class VideoFileInfo:
-    path: Path
-    framerate: Fraction | int | float
-    frame_count: int
-    nominal_start_frame: int
-    physical_frames_before: int
-
-    @property
-    def nominal_end_frame(self) -> int:
-        return self.nominal_start_frame + self.frame_count
-
-
-@dataclass(frozen=True)
-class FramePosition:
-    file_index: int
-    local_frame: int
-
-
-def collect_camera_video_infos(camera_directory: Path) -> list[VideoFileInfo]:
-    """Gather per-file metadata for every video in a camera directory, in playback order."""
-    infos: list[VideoFileInfo] = []
-    physical_frames_before = 0
-    for video_path in sorted(camera_directory.glob("*.mp4")):
-        try:
-            framerate = get_video_framerate(video_path)
-        except (OSError, subprocess.CalledProcessError) as e:
-            # moov atom not found, as happens when a GoPro's battery dies mid-recording.
-            if "moov atom not found" in e.stdout.decode():
-                continue
-            else:
-                raise
-        frame_count = get_video_total_frame_num(video_path)
-        timecode = VideoTimecode.from_video(video_path)
-        infos.append(
-            VideoFileInfo(
-                path=video_path,
-                framerate=framerate,
-                frame_count=frame_count,
-                nominal_start_frame=timecode.to_total_frames(FPS_60),
-                physical_frames_before=physical_frames_before,
-            )
-        )
-        physical_frames_before += frame_count
-    return infos
-
-
-def correct_for_fps_59_94(
-    nominal_frame_offset: int,
-    physical_frames_before: int,
-    framerate: Fraction | int | float,
-) -> int:
-    """Convert a frame offset counted at the nominal FPS_60 rate into a physical frame index.
-
-    `physical_frames_before` is the number of real frames already elapsed in earlier files of the
-    same camera, needed so drift from the true (e.g. 59.94) frame rate is corrected relative to
-    the whole recording, not just the current file.
-    """
-    return round((physical_frames_before + nominal_frame_offset) * (framerate / FPS_60) - physical_frames_before)
-
-
-def locate_frame_position(infos: list[VideoFileInfo], nominal_target_frame: int, boundary_name: str) -> FramePosition:
-    for file_index, info in enumerate(infos):
-        if info.nominal_start_frame <= nominal_target_frame < info.nominal_end_frame:
-            local_frame = correct_for_fps_59_94(
-                nominal_target_frame - info.nominal_start_frame,
-                info.physical_frames_before,
-                info.framerate,
-            )
-            return FramePosition(file_index, min(max(local_frame, 0), info.frame_count))
-
-    if nominal_target_frame < infos[0].nominal_start_frame:
-        print(f"Warning: {boundary_name}-time is before the first available video, clamping to the start.")
-        return FramePosition(0, 0)
-
-    print(f"Warning: {boundary_name}-time is after the last available video, clamping to the end.")
-    last_index = len(infos) - 1
-    return FramePosition(last_index, infos[last_index].frame_count)
-
-
-def resolve_start_position(infos: list[VideoFileInfo], start_time: str | None, use_timecode: bool) -> FramePosition:
-    if start_time is None:
-        return FramePosition(0, 0)
-
-    nominal_frame = parse_time_str_to_frames(start_time, FPS_60)
-    assert nominal_frame is not None
-    if not use_timecode:
-        nominal_frame += infos[0].nominal_start_frame
-    return locate_frame_position(infos, nominal_frame, "start")
-
-
-def resolve_end_position(infos: list[VideoFileInfo], end_time: str | None, use_timecode: bool) -> FramePosition:
-    if end_time is None:
-        last_index = len(infos) - 1
-        return FramePosition(last_index, infos[last_index].frame_count)
-
-    nominal_frame = parse_time_str_to_frames(end_time, FPS_60)
-    assert nominal_frame is not None
-    if not use_timecode:
-        nominal_frame += infos[0].nominal_start_frame
-    return locate_frame_position(infos, nominal_frame, "end")
 
 
 @dataclass(frozen=True)
@@ -397,7 +255,10 @@ def extract_segment_from_video(
 @click.option(
     "--source-directory",
     type=click.Path(file_okay=False, dir_okay=True, writable=False, path_type=Path),
-    help="Directory that contains all input data files. This is expected to be a raw_sensor_data/gopro_data/<mingle folder>",
+    help=(
+        "Directory that contains all input data files. This is expected to "
+        "be a raw_sensor_data/gopro_data/<mingle folder>"
+    ),
     required=True,
 )
 @click.option(

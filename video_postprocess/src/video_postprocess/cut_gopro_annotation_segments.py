@@ -45,7 +45,6 @@ def extract_segments(
             start_time=fmt_time(current),
             end_time=fmt_time(next_time),
             use_timecode=True,
-            every_n_frames=None,
         )
         current = next_time
 

@@ -118,7 +118,6 @@ def main(
                 start_time=start_time_str,
                 end_time=end_time_str,
                 use_timecode=use_timecode,
-                every_n_frames=None,
             )
             print(f"✓ Segment {idx} completed successfully")
         except Exception as e:
