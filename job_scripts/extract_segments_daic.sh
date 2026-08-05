@@ -23,9 +23,12 @@
 #   --mode batch        batch_extract_segments.py - the hardcoded TIME_SEGS_1 /
 #                       TIME_SEGS_2 lists, all clips into one flat directory.
 #
-# Arguments (annotation mode):
-#   -g6 <dir>   source directory for cameras 06-10 (optional)
-#   -g5 <dir>   source directory for cameras 01-05 (optional; at least one of the two)
+# Arguments (annotation mode), all optional - the defaults below are the
+# cosilab_project locations, so plain `sbatch job_scripts/extract_segments_daic.sh`
+# cuts both groups:
+#   -g6 <dir>   source directory for cameras 06-10 (default: mingle_session_1)
+#   -g5 <dir>   source directory for cameras 01-05 (default: mingle_session_2)
+#               pass `none` to either one to skip that group
 #   -t <dir>    target directory
 #
 # Arguments (batch mode):
@@ -47,14 +50,18 @@
 #   <target>/seg_134500_134530/camera_06-mingle_session_1.mp4
 #
 # Examples:
-#   sbatch job_scripts/extract_segments_daic.sh \
-#     -g6 /tudelft.net/staff-umbrella/neon/cosilab_project/raw_sensor_data/gopro_data/top_view_camera-mingle_session_1 \
-#     -t  /tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/video_clips_30s_timestamp_fixed
+#   # both groups, default source and target paths
+#   sbatch job_scripts/extract_segments_daic.sh
 #
-#   sbatch job_scripts/extract_segments_daic.sh -c camera_06-mingle_session_1 \
+#   # only the 06-10 group, one camera, into a scratch target
+#   sbatch job_scripts/extract_segments_daic.sh -g5 none \
+#     -c camera_06-mingle_session_1 \
+#     -t .../data_temp/video_clips_30s_test
+#
+#   # non-default sources
+#   sbatch job_scripts/extract_segments_daic.sh \
 #     -g6 .../top_view_camera-mingle_session_1 \
-#     -g5 .../top_view_camera-mingle_session_2 \
-#     -t  .../video_clips_30s_timestamp_fixed
+#     -g5 .../top_view_camera-mingle_session_2
 
 set -euo pipefail
 
@@ -64,9 +71,11 @@ COSILAB=${NEON}/cosilab_project
 SIF="${SIF:-${NEON}/apptainer/video_postprocess.sif}"
 REPO_DIR="${REPO_DIR:-/home/nfs/zli33/projects/COSILab}"
 
+GOPRO_DATA=${COSILAB}/raw_sensor_data/gopro_data
+
 MODE="annotation"
-GROUP_06_10=""
-GROUP_01_05=""
+GROUP_06_10="${GOPRO_DATA}/top_view_camera-mingle_session_1"
+GROUP_01_05="${GOPRO_DATA}/top_view_camera-mingle_session_2"
 SOURCE_DIR=""
 TARGET_DIR="${COSILAB}/data_temp/video_clips_30s_timestamp_fixed"
 SEGMENT_SET="both"
@@ -75,7 +84,7 @@ CAMERA=""
 USE_BAKED_CODE=0
 
 usage() {
-  echo "Usage: sbatch job_scripts/extract_segments_daic.sh [--mode annotation] -g6 <dir> [-g5 <dir>] -t <dir> [-c <camera>]"
+  echo "Usage: sbatch job_scripts/extract_segments_daic.sh [--mode annotation] [-g6 <dir>|none] [-g5 <dir>|none] [-t <dir>] [-c <camera>]"
   echo "       sbatch job_scripts/extract_segments_daic.sh --mode batch -s <dir> -t <dir> [--segment-set 1|2|both] [--use-timecode] [-c <camera>]"
   echo "       optional everywhere: --sif <path> --repo <dir> --baked-code"
 }
@@ -138,6 +147,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# `-g6 none` / `-g5 none` opts a group out of the defaults above.
+if [[ "${GROUP_06_10,,}" == "none" ]]; then
+  GROUP_06_10=""
+fi
+if [[ "${GROUP_01_05,,}" == "none" ]]; then
+  GROUP_01_05=""
+fi
+
 case "$MODE" in
   annotation|batch) ;;
   *)
@@ -179,7 +196,7 @@ check_source() {
 
 if [ "$MODE" = "annotation" ]; then
   if [[ -z "$GROUP_06_10" && -z "$GROUP_01_05" ]]; then
-    echo "[ERROR] annotation mode needs at least one of -g6 / -g5." >&2
+    echo "[ERROR] Both groups are disabled; leave -g6 / -g5 unset to use the defaults." >&2
     usage >&2
     exit 2
   fi
