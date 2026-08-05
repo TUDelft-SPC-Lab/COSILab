@@ -150,6 +150,39 @@ class VideoTimecode(BaseModel):
             fps=framerate,
         )
 
+    def add(
+        self, other: VideoTimecode, frame_rate: Fraction | int | float
+    ) -> VideoTimecode:
+        """
+        Add two VideoTimecode instances together.
+        It assumes that both timecodes have the same frame rate.
+        """
+        fr = round(
+            frame_rate
+        )  # Convert frame_rate to int for carry calculations
+
+        total_frames = self.frames + other.frames
+        frame_carry = total_frames // fr
+        new_frames = total_frames % fr
+
+        total_seconds = self.seconds + other.seconds + frame_carry
+        second_carry = total_seconds // 60
+        new_seconds = total_seconds % 60
+
+        total_minutes = self.minutes + other.minutes + second_carry
+        minute_carry = total_minutes // 60
+        new_minutes = total_minutes % 60
+
+        total_hours = self.hours + other.hours + minute_carry
+        new_hours = total_hours % 24
+
+        return VideoTimecode(
+            hours=new_hours,
+            minutes=new_minutes,
+            seconds=new_seconds,
+            frames=new_frames,
+        )
+
     @staticmethod
     def from_timedelta(t: timedelta, framerate: Fraction) -> VideoTimecode:
         """
@@ -240,6 +273,26 @@ class VideoTimecode(BaseModel):
             video_timecode, get_video_framerate(video_path)
         )
 
+    def to_total_frames(self, frame_rate: Fraction | int | float) -> int:
+        """Total (non-drop) frame count from 00:00:00:00 to this timecode,
+        treating every second as `round(frame_rate)` frames."""
+        fr = round(frame_rate)
+        return ((self.hours * 3600 + self.minutes * 60 + self.seconds) * fr) + self.frames
+
+    @classmethod
+    def from_total_frames(cls, total_frames: int, frame_rate: Fraction | int | float) -> VideoTimecode:
+        """Inverse of `to_total_frames`. Wraps around at 24 hours, like `add`."""
+        fr = round(frame_rate)
+        total_frames %= 24 * 3600 * fr
+
+        frames = total_frames % fr
+        total_seconds = total_frames // fr
+        seconds = total_seconds % 60
+        total_minutes = total_seconds // 60
+        minutes = total_minutes % 60
+        hours = (total_minutes // 60) % 24
+
+        return cls(hours=hours, minutes=minutes, seconds=seconds, frames=frames)
 
 # The timecode in a video is HH:MM:SS:FF FF, hours, minutes, seconds, frame numer
 # The frame number, which goes from 00 to [frame rate - 1])
