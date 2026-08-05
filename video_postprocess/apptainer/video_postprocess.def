@@ -1,0 +1,90 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+# Apptainer image for the video_postprocess CLI scripts.
+#
+# Build (must be run from the COSILab repo root, %files paths are relative to it):
+#   cd COSILab
+#   apptainer build video_postprocess.sif video_postprocess/apptainer/video_postprocess.def
+#
+# The image ships a frozen copy of the package (from uv.lock) at
+# /opt/video_postprocess, so it runs standalone:
+#   apptainer run video_postprocess.sif \
+#       python -m video_postprocess.batch_extract_segments --help
+#
+# To run modified code without rebuilding, bind the repo and point PYTHONPATH at
+# its src/ directory - the venv's dependencies are reused, only the package code
+# is overridden:
+#   apptainer exec --bind /path/to/COSILab:/mnt/repo \
+#       --env PYTHONPATH=/mnt/repo/video_postprocess/src \
+#       video_postprocess.sif python -m video_postprocess.batch_extract_segments --help
+
+%files
+    video_postprocess/pyproject.toml /opt/video_postprocess/pyproject.toml
+    video_postprocess/uv.lock /opt/video_postprocess/uv.lock
+    video_postprocess/README.md /opt/video_postprocess/README.md
+    video_postprocess/src /opt/video_postprocess/src
+
+%labels
+    Maintainer "Zonghuan Li"
+    Project "COSILab video_postprocess"
+    Purpose "Frame-accurate GoPro segment cutting / frame splitting"
+    Base "ubuntu:24.04"
+
+%post
+    set -ex
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        git \
+        rsync \
+        libgl1 \
+        libglib2.0-0 \
+        && rm -rf /var/lib/apt/lists/*
+
+    # ffmpeg and ffprobe are called as subprocesses by the scripts, so they must
+    # resolve on PATH inside the container.
+    ffmpeg -version | head -n 1
+    ffprobe -version | head -n 1
+
+    # uv, pinned installation dir so it lands on the default PATH.
+    export UV_INSTALL_DIR=/usr/local/bin
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    uv --version
+
+    # Keep the managed interpreter inside the image: the venv created below
+    # symlinks it, and a $HOME-relative install would vanish at run time.
+    export UV_PYTHON_INSTALL_DIR=/opt/uv/python
+    export UV_LINK_MODE=copy
+    export UV_PROJECT_ENVIRONMENT=/opt/video_postprocess/.venv
+
+    cd /opt/video_postprocess
+    uv sync --frozen --no-dev
+
+    /opt/video_postprocess/.venv/bin/python - <<'PY'
+import av, click, cv2, numpy, pandas, tqdm
+import video_postprocess.batch_extract_segments  # noqa: F401
+import video_postprocess.cut_gopro_annotation_segments  # noqa: F401
+
+print("av:", av.__version__)
+print("click:", click.__version__)
+print("numpy:", numpy.__version__)
+print("pandas:", pandas.__version__)
+print("opencv:", cv2.__version__)
+print("video_postprocess imports OK")
+PY
+
+%environment
+    export PATH="/opt/video_postprocess/.venv/bin:${PATH}"
+    export PYTHONUNBUFFERED=1
+    export VIDEO_POSTPROCESS_HOME=/opt/video_postprocess
+
+%runscript
+    exec "$@"
+
+%test
+    ffmpeg -version | head -n 1
+    /opt/video_postprocess/.venv/bin/python -c "import video_postprocess; print('ok')"
