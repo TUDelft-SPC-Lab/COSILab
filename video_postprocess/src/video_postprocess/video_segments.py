@@ -80,7 +80,10 @@ def collect_camera_video_infos(camera_directory: Path) -> list[VideoFileInfo]:
     """Gather per-file metadata for every video in a camera directory, in playback order."""
     infos: list[VideoFileInfo] = []
     physical_frames_before = 0
-    for video_path in sorted(camera_directory.glob("*.mp4")):
+    # GoPro videos are named with capital letters, including the extension. Both spellings are
+    # collected into a set first: on case-insensitive filesystems each glob returns every file.
+    video_paths = sorted({*camera_directory.glob("*.mp4"), *camera_directory.glob("*.MP4")})
+    for video_path in video_paths:
         try:
             framerate = get_video_framerate(video_path)
         except (OSError, subprocess.CalledProcessError) as e:
