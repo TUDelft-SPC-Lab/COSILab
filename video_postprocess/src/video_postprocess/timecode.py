@@ -181,6 +181,7 @@ class VideoTimecode(BaseModel):
             minutes=new_minutes,
             seconds=new_seconds,
             frames=new_frames,
+            fps=frame_rate,
         )
 
     @staticmethod

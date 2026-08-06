@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 from tqdm import tqdm
-
+from video_postprocess.timecode import VideoTimecode
 from video_postprocess.timecode import timecode_ff_to_microseconds
 from video_postprocess.utils import get_camera_to_process
 from video_postprocess.video_segments import (
@@ -21,11 +21,9 @@ def write_timestamps_csv_for_file(info: VideoFileInfo) -> None:
     ffmpeg actually reaches when seeking there, and the `--start-time --use-timecode` value that
     would produce that seek.
 
-    `original_timecode` is this file's own embedded clock, advanced from its own start timecode by
-    the frame's true elapsed time -- i.e. the corrected time `split_video_into_frames` actually
-    passes to ffmpeg's `-ss` when targeting this frame. `world_timecode` is the inverse: the
+    `original_timecode` is this file's own embedded timecode. `world_timecode` is the inverse: the
     nominal (60 fps, drift-uncorrected) timecode a caller would need to pass as `--start-time` to
-    land on this exact frame, undoing the same cross-file `physical_frames_before` correction
+    land on the `original_timecode` frame, undoing the same cross-file `physical_frames_before` correction
     `video_segments.correct_for_fps_59_94` applies when locating frames. `world_timestamp` is the
     same value as `world_timecode`, with its `FF` frame field converted to microseconds.
     """
@@ -37,8 +35,9 @@ def write_timestamps_csv_for_file(info: VideoFileInfo) -> None:
         for local_frame in tqdm(
             range(info.frame_count), desc=info.path.name, unit="Frame", leave=False
         ):
-            original_timecode = timecode_at_local_frame(info, local_frame)
             world_timecode = world_timecode_at_local_frame(info, local_frame)
+            original_timecode = info.start_timecode.add(VideoTimecode.from_total_frames(
+                local_frame, world_timecode.fps), world_timecode.fps)
             world_microseconds = round(timecode_ff_to_microseconds(world_timecode.frames, world_timecode.fps))
             world_timestamp = (
                 f"{world_timecode.hours:02}:{world_timecode.minutes:02}:"
