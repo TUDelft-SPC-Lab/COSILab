@@ -278,6 +278,12 @@ class VideoTimecode(BaseModel):
             video_timecode, get_video_framerate(video_path)
         )
 
+    def to_exact_seconds(self) -> Fraction:
+        """Exact (non-drop) offset from 00:00:00:00 to this timecode, as a Fraction of seconds,
+        using this timecode's own `fps` for the `frames` field (no rounding)."""
+        whole_seconds = self.hours * 3600 + self.minutes * 60 + self.seconds
+        return Fraction(whole_seconds) + Fraction(self.frames) / self.fps
+
     def to_total_frames(self, frame_rate: Fraction | int | float) -> int:
         """Total (non-drop) frame count from 00:00:00:00 to this timecode,
         treating every second as `round(frame_rate)` frames."""
@@ -326,3 +332,18 @@ def timecode_ff_to_microseconds(
     timecode_ff: int, framerate: float | int
 ) -> float:
     return float(1000000 * (timecode_ff / framerate))
+
+
+def format_exact_seconds(seconds: Fraction, fraction_digits: int = 6) -> str:
+    """Format an exact offset-of-day, in seconds, as "HH:MM:SS.ff..." with `fraction_digits`
+    fractional digits, wrapping at 24 hours. Unlike `VideoTimecode`, whose `frames` field is
+    bounded by an integer fps, this keeps arbitrary sub-second precision."""
+    units_per_second = 10**fraction_digits
+    units = round(seconds * units_per_second) % (24 * 3600 * units_per_second)
+    fraction = units % units_per_second
+    total_seconds = units // units_per_second
+    seconds_part = total_seconds % 60
+    total_minutes = total_seconds // 60
+    minutes = total_minutes % 60
+    hours = (total_minutes // 60) % 24
+    return f"{hours:02}:{minutes:02}:{seconds_part:02}.{fraction:0{fraction_digits}}"

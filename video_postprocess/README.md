@@ -5,8 +5,9 @@ This folder contains utilities for GoPro-style video postprocessing. The core fu
 1. Concatenate raw per-camera video chunks into one continuous video per camera.
 2. Cut a frame-accurate video segment for every camera directly from the raw per-camera video chunks, either by relative time or by embedded video timecode.
 3. Split a requested interval of the raw per-camera video chunks into numbered frame images.
+4. Generate a per-frame real-time timestamp CSV for every raw per-camera video chunk.
 
-Segment cutting and frame splitting both correct for cameras that record at a true rate (e.g. 59.94 fps) slightly off from the nominal 60 fps clock that timecodes and requested times are expressed against, so multi-file, multi-hour recordings stay frame-accurate.
+Segment cutting, frame splitting, and timestamp generation all correct for cameras that record at a true rate (e.g. 59.94 fps) slightly off from the nominal 60 fps clock that timecodes and requested times are expressed against, so multi-file, multi-hour recordings stay frame-accurate.
 
 The scripts use `ffmpeg` / `ffprobe` through Python, so both command-line tools must be available on `PATH`.
 
@@ -268,7 +269,58 @@ This keeps every 10th frame of the requested interval; the sampling grid stays a
 
 `CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
 
-## 5. Camera Calibration Pipeline
+## 5. Generate Real-Time Timestamp CSVs
+
+Use:
+
+```text
+generate_timestamps_csv.py
+```
+
+Like segment cutting and frame splitting, this works directly on raw per-camera video chunks:
+
+```text
+raw_videos/
+  cam01/
+    GX010001.MP4
+  cam02/
+    GX010002.MP4
+```
+
+Run:
+
+```bash
+uv run python generate_timestamps_csv.py \
+  --source-directory /path/to/raw_videos
+```
+
+For every video file, this writes a sibling CSV next to it, with one row per frame:
+
+```text
+raw_videos/
+  cam01/
+    GX010001.MP4
+    GX010001.csv
+  cam02/
+    GX010002.MP4
+    GX010002.csv
+```
+
+Each CSV has two columns:
+
+```text
+original_timecode, world_timestamp
+HH:MM:SS:FF,        HH:MM:SS.ssssss
+```
+
+- `original_timecode` is the frame's embedded camera timecode, advanced from the file's own start timecode at the file's actual (physical) framerate.
+- `world_timestamp` is the same instant as a real elapsed-time clock reading, with 6 fractional digits (1 µs resolution).
+
+Both columns already correct for a camera's true framerate (e.g. 59.94 fps) against the nominal 60 fps clock the `:FF` field counts against, the same correction `extract_segment_from_video.py` and `split_video_into_frames.py` apply, just computed per-frame instead of per-segment.
+
+`CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
+
+## 6. Camera Calibration Pipeline
 
 The camera calibration utilities in this folder support this workflow:
 
@@ -505,7 +557,7 @@ sbatch video_postprocess/job_scripts/extract_segments.sh \
 
 ## Minimal Files Needed
 
-If you only want to keep the concatenation, segment-cutting, and frame-splitting functions above, the required runtime files are:
+If you only want to keep the concatenation, segment-cutting, frame-splitting, and timestamp-CSV functions above, the required runtime files are:
 
 ```text
 video_postprocess/
@@ -513,6 +565,7 @@ video_postprocess/
   concat_videos.py
   extract_segment_from_video.py
   split_video_into_frames.py
+  generate_timestamps_csv.py
   video_segments.py
   timecode.py
   utils.py
@@ -528,7 +581,7 @@ video_postprocess/
   py.typed                           # optional typing marker, not needed at runtime
 ```
 
-Everything else in `video_postprocess/` is unrelated to concatenating videos, cutting video intervals, or splitting videos into frames, and can be removed for this reduced workflow.
+Everything else in `video_postprocess/` is unrelated to concatenating videos, cutting video intervals, splitting videos into frames, or generating timestamp CSVs, and can be removed for this reduced workflow.
 
 If you also want to keep camera calibration support, keep these additional files:
 
@@ -544,7 +597,7 @@ video_postprocess/
     easymocap.py
 ```
 
-Required uv run python packages for video concatenation, segment cutting, and frame splitting:
+Required uv run python packages for video concatenation, segment cutting, frame splitting, and timestamp CSV generation:
 
 ```text
 av
