@@ -12,8 +12,9 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/home/zli33/linuxhome/projects/vlm_social"
+PROJECT_ROOT="${PROJECT_ROOT:-/home/zli33/linuxhome/projects/COSILab}"
 CONTAINER_PROJECT_ROOT="/workspace"
+PACKAGE_SUBDIR="baselines/intention"
 SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/gemma.sif"
 DATA_ROOT="/tudelft.net/staff-umbrella/neon/ingroup_dataset"
 MODEL_PATH="/tudelft.net/staff-umbrella/neon/zonghuan/models/GemmaE4B"
@@ -25,8 +26,10 @@ AUDIO_MEDIA_PATH_PREFIX="https://covfee.ewi.tudelft.nl/P8wPkLamHiAMOvb29g9h3AFy8
 input_json="/tudelft.net/staff-umbrella/neon/B1_pipeline/annotation_clips.json"
 output_dir="/tudelft.net/staff-umbrella/neon/B1_pipeline/model_responses"
 output_json=""
-prompt_config="${PROJECT_ROOT}/gemma/prompt_ingroup.json"
-container_prompt_config="${CONTAINER_PROJECT_ROOT}/gemma/prompt_ingroup.json"
+# Empty means "use the prompt_ingroup.json shipped inside the intention_inference
+# package"; resolved after argument parsing because it follows --project-root.
+prompt_config=""
+container_prompt_config=""
 max_new_tokens="512"
 max_video_frames="32"
 enable_thinking=0
@@ -44,7 +47,8 @@ usage() {
     echo "  --input-json PATH                          Default: ${input_json}" >&2
     echo "  --output PATH                              Exact output JSON file path" >&2
     echo "  --output-dir PATH                          Default: ${output_dir}" >&2
-    echo "  --prompt-config PATH                       Default: ${prompt_config}" >&2
+    echo "  --prompt-config PATH                       Default: packaged prompt_ingroup.json" >&2
+    echo "  --project-root PATH                        COSILab checkout. Default: ${PROJECT_ROOT}" >&2
     echo "  --model-path PATH                          Default: ${MODEL_PATH}" >&2
     echo "  --sif-path PATH                            Default: ${SIF_PATH}" >&2
     echo "  --data-root PATH                           Default: ${DATA_ROOT}" >&2
@@ -74,6 +78,10 @@ while [[ $# -gt 0 ]]; do
         --prompt-config)
             prompt_config="${2:?Missing value for --prompt-config}"
             container_prompt_config="${prompt_config}"
+            shift 2
+            ;;
+        --project-root)
+            PROJECT_ROOT="${2:?Missing value for --project-root}"
             shift 2
             ;;
         --model-path)
@@ -196,14 +204,24 @@ if [[ ! -f "${SIF_PATH}" ]]; then
     exit 1
 fi
 
-if [[ ! -f "${PROJECT_ROOT}/gemma/model_inference.py" ]]; then
-    echo "[ERROR] Gemma ingroup inference script not found: ${PROJECT_ROOT}/gemma/model_inference.py" >&2
+SRC_DIR="${PROJECT_ROOT}/${PACKAGE_SUBDIR}/src"
+CONTAINER_SRC_DIR="${CONTAINER_PROJECT_ROOT}/${PACKAGE_SUBDIR}/src"
+
+# The job always runs the checkout's code, never a copy baked into the image.
+if [[ ! -f "${SRC_DIR}/intention_inference/cli.py" ]]; then
+    echo "[ERROR] intention_inference package not found: ${SRC_DIR}/intention_inference" >&2
+    echo "        Pass --project-root <dir> or export PROJECT_ROOT to point at your COSILab checkout." >&2
     exit 1
 fi
 
 if [[ ! -d "${MODEL_PATH}" ]]; then
     echo "[ERROR] Model path not found: ${MODEL_PATH}" >&2
     exit 1
+fi
+
+if [[ -z "${prompt_config}" ]]; then
+    prompt_config="${SRC_DIR}/intention_inference/prompt_ingroup.json"
+    container_prompt_config="${CONTAINER_SRC_DIR}/intention_inference/prompt_ingroup.json"
 fi
 
 if [[ ! -f "${prompt_config}" ]]; then
@@ -226,6 +244,8 @@ mkdir -p "$(dirname "${output_json}")"
 
 echo "[INFO] project_root              = ${PROJECT_ROOT}"
 echo "[INFO] container_project_root    = ${CONTAINER_PROJECT_ROOT}"
+echo "[INFO] src_dir                   = ${SRC_DIR} (commit $(git -C "${PROJECT_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown))"
+echo "[INFO] container_src_dir         = ${CONTAINER_SRC_DIR}"
 echo "[INFO] sif_path                  = ${SIF_PATH}"
 echo "[INFO] data_root                 = ${DATA_ROOT}"
 echo "[INFO] input_json                = ${input_json}"
@@ -247,7 +267,7 @@ echo "[INFO] audio_media_path_prefix   = ${AUDIO_MEDIA_PATH_PREFIX}"
 echo "[INFO] audio_local_path_prefix   = ${AUDIO_LOCAL_PATH_PREFIX}"
 
 python_args=(
-    python "${CONTAINER_PROJECT_ROOT}/gemma/model_inference.py"
+    python -m intention_inference
     --model "${MODEL_PATH}"
     --input-json "${input_json}"
     --output "${output_json}"
@@ -276,13 +296,36 @@ if [[ -n "${index_range}" ]]; then
     python_args+=(--start-index "${start_index}" --end-index "${end_index}")
 fi
 
-srun apptainer exec --nv \
-    --bind "${PROJECT_ROOT}:/workspace" \
-    --bind /tudelft.net/staff-umbrella/neon:/tudelft.net/staff-umbrella/neon \
-    --bind /home/zli33/linuxhome:/home/zli33/linuxhome \
-    --pwd "${CONTAINER_PROJECT_ROOT}" \
-    --env HF_HOME="${HF_CACHE}" \
-    --env TRANSFORMERS_CACHE="${HF_CACHE}" \
+apptainer_args=(
+    --nv
+    --bind "${PROJECT_ROOT}:${CONTAINER_PROJECT_ROOT}"
+    --bind /tudelft.net/staff-umbrella/neon:/tudelft.net/staff-umbrella/neon
+    --bind /home/zli33/linuxhome:/home/zli33/linuxhome
+    --pwd "${CONTAINER_PROJECT_ROOT}"
+    --env HF_HOME="${HF_CACHE}"
+    --env TRANSFORMERS_CACHE="${HF_CACHE}"
+    --env PYTHONPATH="${CONTAINER_SRC_DIR}"
+)
+
+# The checkout existing on the host is not enough: PYTHONPATH has to resolve to
+# it inside the container, otherwise python silently imports whatever the image
+# was built with.
+echo "[INFO] Verifying the container resolves intention_inference from the checkout..."
+apptainer exec "${apptainer_args[@]}" "${SIF_PATH}" \
+    python -c '
+import os, sys
+expected = os.path.realpath(sys.argv[1])
+import intention_inference
+actual = os.path.realpath(os.path.dirname(os.path.dirname(intention_inference.__file__)))
+if actual != expected:
+    sys.exit(
+        f"[ERROR] Container imported intention_inference from {actual}, not {expected}.\n"
+        "        The checkout is not visible inside the container - add a bind mount for it."
+    )
+print(f"[INFO] container resolved intention_inference from {actual}")
+' "${CONTAINER_SRC_DIR}"
+
+srun apptainer exec "${apptainer_args[@]}" \
     "${SIF_PATH}" \
     "${python_args[@]}"
 

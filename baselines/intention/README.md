@@ -157,13 +157,15 @@ gemma_ingroup_daic.sh
 Default DAIC paths in the script:
 
 ```text
-PROJECT_ROOT=/home/zli33/linuxhome/projects/vlm_social
+PROJECT_ROOT=/home/zli33/linuxhome/projects/COSILab
 SIF_PATH=/tudelft.net/staff-umbrella/neon/apptainer/gemma.sif
 DATA_ROOT=/tudelft.net/staff-umbrella/neon/ingroup_dataset
 MODEL_PATH=/tudelft.net/staff-umbrella/neon/zonghuan/models/GemmaE4B
 input_json=/tudelft.net/staff-umbrella/neon/B1_pipeline/annotation_clips.json
 output_dir=/tudelft.net/staff-umbrella/neon/B1_pipeline/model_responses
 ```
+
+`PROJECT_ROOT` is the COSILab checkout, overridable with `--project-root` or the `PROJECT_ROOT` environment variable. It is bound to `/workspace` in the container, and `PYTHONPATH` is set to `/workspace/baselines/intention/src`, so the job always runs the checkout's code rather than a copy baked into the image. `--prompt-config` defaults to the `prompt_ingroup.json` shipped inside the package under that checkout.
 
 Submit with defaults:
 
@@ -194,17 +196,15 @@ sbatch baselines/intention/gemma_ingroup_daic.sh \
 
 The wrapper:
 
-1. Validates the model, SIF, prompt config, and input manifest.
+1. Validates the model, SIF, checkout, prompt config, and input manifest.
 2. Maps remote media URL prefixes in the manifest to local DAIC filesystem paths.
-3. Builds the inference command with prompt, model, media-prefix, and range options.
-4. Runs it with `srun apptainer exec --nv`.
+3. Builds the `python -m intention_inference` command with prompt, model, media-prefix, and range options.
+4. Checks inside the container that `intention_inference` resolves to the checkout, then runs the command with `srun apptainer exec --nv`.
 5. Writes logs under:
 
 ```text
 /home/zli33/linuxhome/slurm_outputs/gemma/
 ```
-
-Note: the script still invokes the pre-packaging entry point `${PROJECT_ROOT}/gemma/model_inference.py` and expects `prompt_ingroup.json` under `${PROJECT_ROOT}/gemma/`. Update those paths (or the checkout on DAIC) to the packaged CLI before submitting.
 
 ## Annotation and Survey Analysis
 
