@@ -129,6 +129,30 @@ def correct_for_fps_59_94(
     return round((physical_frames_before + nominal_frame_offset) * (framerate / FPS_60) - physical_frames_before)
 
 
+def invert_correct_for_fps_59_94(
+    local_frame: int,
+    physical_frames_before: int,
+    framerate: Fraction | int | float,
+) -> int:
+    """Inverse of `correct_for_fps_59_94`: recover the nominal (FPS_60) frame offset that a
+    `--start-time`/`--use-timecode` value would need to encode, relative to the file's own start
+    timecode, for ffmpeg's `-ss` to land on `local_frame`, the physical frame actually reached in
+    the file.
+    """
+    return round(
+        (local_frame + physical_frames_before) * (Fraction(FPS_60) / framerate) - physical_frames_before
+    )
+
+
+def world_timecode_at_local_frame(info: VideoFileInfo, local_frame: int) -> VideoTimecode:
+    """The nominal (FPS_60, drift-uncorrected) timecode that `--start-time --use-timecode` would
+    need to be given to land on `local_frame` of `info`'s file -- the inverse of the correction
+    `locate_frame_position` applies via `correct_for_fps_59_94`, including the drift already
+    accumulated over the camera's earlier files via `info.physical_frames_before`."""
+    nominal_offset = invert_correct_for_fps_59_94(local_frame, info.physical_frames_before, info.framerate)
+    return VideoTimecode.from_total_frames(info.nominal_start_frame + nominal_offset, FPS_60)
+
+
 def locate_frame_position(infos: list[VideoFileInfo], nominal_target_frame: int, boundary_name: str) -> FramePosition:
     for file_index, info in enumerate(infos):
         if info.nominal_start_frame <= nominal_target_frame < info.nominal_end_frame:

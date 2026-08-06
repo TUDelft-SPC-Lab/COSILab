@@ -303,7 +303,7 @@ class VideoTimecode(BaseModel):
         minutes = total_minutes % 60
         hours = (total_minutes // 60) % 24
 
-        return cls(hours=hours, minutes=minutes, seconds=seconds, frames=frames)
+        return cls(hours=hours, minutes=minutes, seconds=seconds, frames=frames, fps=frame_rate)
 
 # The timecode in a video is HH:MM:SS:FF FF, hours, minutes, seconds, frame numer
 # The frame number, which goes from 00 to [frame rate - 1])
