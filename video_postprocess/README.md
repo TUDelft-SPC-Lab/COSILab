@@ -433,6 +433,76 @@ The script:
 5. Transforms all other camera extrinsics into the first camera coordinate system.
 6. Writes one combined calibrator JSON per camera.
 
+## 6. Submit on the Cluster
+
+`job_scripts/` holds the Slurm wrappers that run the segment-cutting steps above inside the `video_postprocess` Apptainer image, so no `uv sync` is needed on the cluster:
+
+```text
+job_scripts/
+  extract_segments_daic.sh    DAIC, annotation or batch segment cutting
+  extract_segments.sh         DelftBlue, batch segment cutting only
+```
+
+Both scripts bind the COSILab checkout into the container and set `PYTHONPATH` to `<repo>/video_postprocess/src`, so the job runs the code from your checkout rather than the copy frozen into the image at build time. Build the image first if it is missing:
+
+```bash
+apptainer build /path/to/video_postprocess.sif video_postprocess/apptainer/video_postprocess.def
+```
+
+### DAIC: `extract_segments_daic.sh`
+
+Runs on the `insy,general` partitions and defaults to the `cosilab_project` locations under `/tudelft.net/staff-umbrella/neon`:
+
+```text
+SIF=/tudelft.net/staff-umbrella/neon/apptainer/video_postprocess.sif
+REPO_DIR=/home/nfs/zli33/projects/COSILab
+```
+
+Two modes:
+
+- `--mode annotation` (default) runs `cut_gopro_annotation_segments.py` for both camera groups, as described in [Fixed 30-Second Annotation Segments](#fixed-30-second-annotation-segments).
+- `--mode batch` runs `batch_extract_segments.py` with the hardcoded `TIME_SEGS_1` / `TIME_SEGS_2` lists.
+
+Both groups, default source and target paths:
+
+```bash
+sbatch video_postprocess/job_scripts/extract_segments_daic.sh
+```
+
+Only the `06-10` group, one camera, into a scratch target:
+
+```bash
+sbatch video_postprocess/job_scripts/extract_segments_daic.sh -g5 none \
+  -c camera_06-mingle_session_1 \
+  -t /path/to/video_clips_30s_test
+```
+
+Batch mode:
+
+```bash
+sbatch video_postprocess/job_scripts/extract_segments_daic.sh --mode batch \
+  -s /path/to/raw_videos \
+  -t /path/to/output_segments \
+  --segment-set both --use-timecode
+```
+
+Options: `-g6` / `-g5` (annotation-mode source directories, `none` to skip a group), `-s` / `-t`, `--segment-set 1|2|both`, `--use-timecode`, `-c <camera>`, `--sif <path>`, `--repo <dir>`.
+
+The script validates the image and the source layout before submitting work — it fails early if a source directory holds no camera subdirectories or no `.MP4` chunks — then verifies inside the container that `video_postprocess` imports from the checkout and aborts if it resolves to the image's own copy. ffmpeg's intermediate cut parts go to a per-job `/tmp` directory that is removed on exit.
+
+### DelftBlue: `extract_segments.sh`
+
+Runs batch mode only, on the `compute` partition under `--account=research-eemcs-insy`, with `/scratch/zli33` defaults:
+
+```bash
+sbatch video_postprocess/job_scripts/extract_segments.sh \
+  -s /scratch/zli33/data/cosilab/raw_videos \
+  -t /scratch/zli33/data/cosilab/segments \
+  --segment-set 1 --use-timecode -c cam01
+```
+
+`-s` and `-t` are required. It takes the same `--segment-set`, `--use-timecode`, `-c`, `--sif`, and `--repo` options, plus `--baked-code` to ignore the checkout and use the code inside the image. Unlike the DAIC script it only warns, rather than failing, when the checkout is missing.
+
 ## Minimal Files Needed
 
 If you only want to keep the concatenation, segment-cutting, and frame-splitting functions above, the required runtime files are:
