@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name="gemma_ingroup"
+#SBATCH --job-name="gemma_cosilab"
 #SBATCH --time=10:00:00
 #SBATCH --partition=ewi-insy,all
 #SBATCH --ntasks=1
@@ -329,4 +329,4 @@ srun apptainer exec "${apptainer_args[@]}" \
     "${SIF_PATH}" \
     "${python_args[@]}"
 
-echo "[INFO] Gemma ingroup inference completed: ${output_json}"
+echo "[INFO] Gemma intention inference completed: ${output_json}"

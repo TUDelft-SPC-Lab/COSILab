@@ -26,11 +26,11 @@
 #   --baked-code               ignore --repo and use the code baked into the image
 #
 # Examples:
-#   sbatch job_scripts/extract_segments.sh \
+#   sbatch video_postprocess/job_scripts/extract_segments.sh \
 #     -s /scratch/zli33/data/cosilab/concatenated_videos \
 #     -t /scratch/zli33/data/cosilab/segments
 #
-#   sbatch job_scripts/extract_segments.sh \
+#   sbatch video_postprocess/job_scripts/extract_segments.sh \
 #     -s /scratch/zli33/data/cosilab/raw_videos \
 #     -t /scratch/zli33/data/cosilab/segments \
 #     --segment-set 1 --use-timecode -c cam01
@@ -51,7 +51,7 @@ CAMERA=""
 USE_BAKED_CODE=0
 
 usage() {
-  echo "Usage: sbatch job_scripts/extract_segments.sh -s <source-dir> -t <target-dir>" \
+  echo "Usage: sbatch video_postprocess/job_scripts/extract_segments.sh -s <source-dir> -t <target-dir>" \
        "[--segment-set 1|2|both] [--use-timecode] [-c <camera>] [--sif <path>] [--repo <dir>] [--baked-code]"
 }
 

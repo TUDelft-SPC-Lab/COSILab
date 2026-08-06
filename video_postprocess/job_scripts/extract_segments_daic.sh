@@ -24,7 +24,7 @@
 #                       TIME_SEGS_2 lists, all clips into one flat directory.
 #
 # Arguments (annotation mode), all optional - the defaults below are the
-# cosilab_project locations, so plain `sbatch job_scripts/extract_segments_daic.sh`
+# cosilab_project locations, so plain `sbatch video_postprocess/job_scripts/extract_segments_daic.sh`
 # cuts both groups:
 #   -g6 <dir>   source directory for cameras 06-10 (default: mingle_session_1)
 #   -g5 <dir>   source directory for cameras 01-05 (default: mingle_session_2)
@@ -55,15 +55,15 @@
 #
 # Examples:
 #   # both groups, default source and target paths
-#   sbatch job_scripts/extract_segments_daic.sh
+#   sbatch video_postprocess/job_scripts/extract_segments_daic.sh
 #
 #   # only the 06-10 group, one camera, into a scratch target
-#   sbatch job_scripts/extract_segments_daic.sh -g5 none \
+#   sbatch video_postprocess/job_scripts/extract_segments_daic.sh -g5 none \
 #     -c camera_06-mingle_session_1 \
 #     -t .../data_temp/video_clips_30s_test
 #
 #   # non-default sources
-#   sbatch job_scripts/extract_segments_daic.sh \
+#   sbatch video_postprocess/job_scripts/extract_segments_daic.sh \
 #     -g6 .../top_view_camera-mingle_session_1 \
 #     -g5 .../top_view_camera-mingle_session_2
 
@@ -87,8 +87,8 @@ USE_TIMECODE=0
 CAMERA=""
 
 usage() {
-  echo "Usage: sbatch job_scripts/extract_segments_daic.sh [--mode annotation] [-g6 <dir>|none] [-g5 <dir>|none] [-t <dir>] [-c <camera>]"
-  echo "       sbatch job_scripts/extract_segments_daic.sh --mode batch -s <dir> -t <dir> [--segment-set 1|2|both] [--use-timecode] [-c <camera>]"
+  echo "Usage: sbatch video_postprocess/job_scripts/extract_segments_daic.sh [--mode annotation] [-g6 <dir>|none] [-g5 <dir>|none] [-t <dir>] [-c <camera>]"
+  echo "       sbatch video_postprocess/job_scripts/extract_segments_daic.sh --mode batch -s <dir> -t <dir> [--segment-set 1|2|both] [--use-timecode] [-c <camera>]"
   echo "       optional everywhere: --sif <path> --repo <dir>"
 }
 

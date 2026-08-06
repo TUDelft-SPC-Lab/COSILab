@@ -18,7 +18,8 @@ src/intention_inference/
   gemma.py                          Gemma chat template, media decoding, generation
   prompt_ingroup.json               default prompt configuration
   __main__.py                       entry point for `python -m intention_inference`
-gemma_ingroup_daic.sh               Slurm submission wrapper for DAIC
+job_scripts/
+  gemma_cosilab_daic.sh             Slurm submission wrapper for DAIC
 ```
 
 ## Installation
@@ -151,7 +152,7 @@ Prompting and generation:
 Use:
 
 ```text
-gemma_ingroup_daic.sh
+job_scripts/gemma_cosilab_daic.sh
 ```
 
 Default DAIC paths in the script:
@@ -170,25 +171,25 @@ output_dir=/tudelft.net/staff-umbrella/neon/B1_pipeline/model_responses
 Submit with defaults:
 
 ```bash
-sbatch baselines/intention/gemma_ingroup_daic.sh
+sbatch baselines/intention/job_scripts/gemma_cosilab_daic.sh
 ```
 
 Process a specific manifest index range:
 
 ```bash
-sbatch baselines/intention/gemma_ingroup_daic.sh --index-range 0-99
+sbatch baselines/intention/job_scripts/gemma_cosilab_daic.sh --index-range 0-99
 ```
 
 Run video-only inference:
 
 ```bash
-sbatch baselines/intention/gemma_ingroup_daic.sh --no-audio
+sbatch baselines/intention/job_scripts/gemma_cosilab_daic.sh --no-audio
 ```
 
 Override model, input, and output:
 
 ```bash
-sbatch baselines/intention/gemma_ingroup_daic.sh \
+sbatch baselines/intention/job_scripts/gemma_cosilab_daic.sh \
   --model-path /path/to/GemmaE4B \
   --input-json /path/to/annotation_clips.json \
   --output /path/to/model_responses/run.json
@@ -228,7 +229,7 @@ Results:
 
 Typical sequence:
 
-1. Run Gemma inference with `intention-inference` or `gemma_ingroup_daic.sh`.
+1. Run Gemma inference with `intention-inference` or `job_scripts/gemma_cosilab_daic.sh`.
 2. Use `process_data.ipynb` to load model response JSON files, parse the assistant text into structured rows, and write tables such as `df_model.csv` and LLM-labeled annotation CSVs.
 3. Use `semantic_similarity.ipynb` to compare human annotations and model annotations by embedding intention descriptions or explanations, computing pairwise similarity, and visualizing sources such as annotator A, annotator B, final human annotations, and model outputs.
 4. Use `LLM_as_judge.ipynb` for a complementary comparison where an LLM receives paired model/human annotations for the same item and predicts which one was human-written.
