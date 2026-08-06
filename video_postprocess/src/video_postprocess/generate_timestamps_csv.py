@@ -18,17 +18,19 @@ from video_postprocess.video_segments import (
 FRACTION_DIGITS = 6
 
 
-def write_timestamps_csv_for_file(info: VideoFileInfo) -> None:
+def write_timestamps_csv_for_file(info: VideoFileInfo, world_start_seconds: Fraction) -> None:
     """Write a sibling CSV next to `info.path` with one row per frame of that file: its embedded
     (camera) timecode and the corresponding world (real elapsed) timestamp.
 
-    Both columns describe the same instant, computed from the file's own start timecode advanced
-    by the file's actual (physical) framerate rather than the nominal 60 fps the timecode's FF
-    field counts against -- this is the same 59.94 fps correction `video_segments` applies when
-    locating frames, just expressed per-frame instead of per-segment.
+    `original_timecode` is this file's own embedded clock, advanced from its own start timecode --
+    it does not know about earlier files. `world_timestamp` instead starts from
+    `world_start_seconds`, the real elapsed time already accumulated over the camera's earlier
+    files (see `generate_timestamps_csv`), so it stays correct across a multi-file recording even
+    though a camera's true (e.g. 59.94 fps) capture rate drifts against the nominal 60 fps its
+    embedded timecode counts against -- the same cross-file correction `video_segments` applies
+    via `physical_frames_before` when locating frames.
     """
     csv_path = info.path.with_suffix(".csv")
-    start_seconds = info.start_timecode.to_exact_seconds()
     frame_duration = Fraction(1, 1) / info.framerate
 
     with csv_path.open("w", newline="") as f:
@@ -38,7 +40,7 @@ def write_timestamps_csv_for_file(info: VideoFileInfo) -> None:
             range(info.frame_count), desc=info.path.name, unit="Frame", leave=False
         ):
             original_timecode = timecode_at_local_frame(info, local_frame)
-            world_seconds = start_seconds + local_frame * frame_duration
+            world_seconds = world_start_seconds + local_frame * frame_duration
             writer.writerow(
                 [
                     original_timecode.to_ffmpeg_format(),
@@ -62,8 +64,11 @@ def generate_timestamps_csv(source_directory: Path) -> None:
             print(f"No videos found for camera '{camera_directory.name}', skipping.")
             continue
 
+        # Real elapsed time accumulates from the first file's own embedded start timecode
+        world_seconds = infos[0].start_timecode.to_exact_seconds()
         for info in infos:
-            write_timestamps_csv_for_file(info)
+            write_timestamps_csv_for_file(info, world_seconds)
+            world_seconds += Fraction(info.frame_count, 1) / info.framerate
 
 
 @click.command()

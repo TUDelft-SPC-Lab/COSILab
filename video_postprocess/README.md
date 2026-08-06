@@ -313,10 +313,10 @@ original_timecode, world_timestamp
 HH:MM:SS:FF,        HH:MM:SS.ssssss
 ```
 
-- `original_timecode` is the frame's embedded camera timecode, advanced from the file's own start timecode at the file's actual (physical) framerate.
-- `world_timestamp` is the same instant as a real elapsed-time clock reading, with 6 fractional digits (1 µs resolution).
+- `original_timecode` is the frame's embedded camera timecode, advanced from its own file's start timecode at that file's actual (physical) framerate. It does not know about earlier chunk files.
+- `world_timestamp` is the same instant as a real elapsed-time clock reading, with 6 fractional digits (1 µs resolution). For the first chunk of a camera it starts from that chunk's own embedded start timecode; every later chunk instead continues from the real elapsed time accumulated over that camera's earlier chunks, so multi-file drift between the camera's nominal-fps timecode clock and its true (e.g. 59.94 fps) capture rate doesn't reset at each chunk boundary.
 
-Both columns already correct for a camera's true framerate (e.g. 59.94 fps) against the nominal 60 fps clock the `:FF` field counts against, the same correction `extract_segment_from_video.py` and `split_video_into_frames.py` apply, just computed per-frame instead of per-segment.
+Both columns correct for a camera's true framerate (e.g. 59.94 fps) against the nominal 60 fps clock the `:FF` field counts against — the per-frame version of the same correction `extract_segment_from_video.py` and `split_video_into_frames.py` apply per-segment via `physical_frames_before`, so results stay consistent with those scripts across multi-file recordings.
 
 `CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
 
