@@ -16,9 +16,9 @@ from video_postprocess.video_segments import (
 )
 
 
-def write_timestamps_csv_for_file(info: VideoFileInfo) -> None:
-    """Write a sibling CSV next to `info.path` with one row per frame of that file: the timecode
-    ffmpeg actually reaches when seeking there, and the `--start-time --use-timecode` value that
+def write_timestamps_csv_for_file(info: VideoFileInfo, csv_path: Path) -> None:
+    """Write a CSV at `csv_path` with one row per frame of `info.path`: the timecode ffmpeg
+    actually reaches when seeking there, and the `--start-time --use-timecode` value that
     would produce that seek.
 
     `original_timecode` is this file's own embedded timecode. `world_timecode` is the inverse: the
@@ -27,7 +27,7 @@ def write_timestamps_csv_for_file(info: VideoFileInfo) -> None:
     `video_segments.correct_for_fps_59_94` applies when locating frames. `world_timestamp` is the
     same value as `world_timecode`, with its `FF` frame field converted to microseconds.
     """
-    csv_path = info.path.with_suffix(".csv")
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
 
     with csv_path.open("w", newline="") as f:
         writer = csv.writer(f)
@@ -52,7 +52,7 @@ def write_timestamps_csv_for_file(info: VideoFileInfo) -> None:
             )
 
 
-def generate_timestamps_csv(source_directory: Path) -> None:
+def generate_timestamps_csv(source_directory: Path, output_directory: Path) -> None:
     camera_to_process = get_camera_to_process()
 
     camera_directories = [
@@ -68,7 +68,9 @@ def generate_timestamps_csv(source_directory: Path) -> None:
             continue
 
         for info in infos:
-            write_timestamps_csv_for_file(info)
+            relative_path = info.path.relative_to(source_directory)
+            csv_path = (output_directory / relative_path).with_suffix(".csv")
+            write_timestamps_csv_for_file(info, csv_path)
 
 
 @click.command()
@@ -82,8 +84,14 @@ def generate_timestamps_csv(source_directory: Path) -> None:
     ),
     required=True,
 )
-def main(source_directory: Path) -> None:
-    generate_timestamps_csv(source_directory=source_directory)
+@click.option(
+    "--output-directory",
+    type=click.Path(file_okay=False, dir_okay=True, writable=True, path_type=Path),
+    help="Directory in which the camera-directory structure of --source-directory is recreated, with a CSV per video.",
+    required=True,
+)
+def main(source_directory: Path, output_directory: Path) -> None:
+    generate_timestamps_csv(source_directory=source_directory, output_directory=output_directory)
 
 
 if __name__ == "__main__":
