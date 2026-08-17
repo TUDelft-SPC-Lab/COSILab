@@ -41,6 +41,19 @@ class BaseTaskMode(ABC):
     # particular JSON lives.
     prompt_config_path: Path
 
+    def __init__(self) -> None:
+        self.prompt_config: dict[str, Any] = {}
+
+    def configure(self, prompt_config: Mapping[str, Any]) -> None:
+        """Hand the mode its resolved prompt config, before any record is prepared.
+
+        A mode that labels its own parts -- "Participant 3 audio:" ahead of the
+        audio -- needs those templates while building the turn, not only while
+        rendering the prompt. Keeping them in the prompt config rather than in
+        Python means the wording of a run is still one file you can diff.
+        """
+        self.prompt_config = dict(prompt_config)
+
     def prepare_record(
         self,
         record: dict[str, Any],

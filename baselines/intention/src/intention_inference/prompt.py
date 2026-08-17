@@ -12,7 +12,7 @@ class SafeFormatDict(dict[str, Any]):
         return "{" + key + "}"
 
 
-def load_prompt_config(prompt_config_path: Any) -> dict[str, str]:
+def load_prompt_config(prompt_config_path: Any) -> dict[str, Any]:
     with prompt_config_path.open(encoding="utf-8") as handle:
         payload = json.load(handle)
 
@@ -80,10 +80,16 @@ def load_prompt_config(prompt_config_path: Any) -> dict[str, str]:
                 "or provide structured 'intro'/'questions'/'examples' fields."
             )
 
-    return {
-        "system_prompt": system_prompt.strip(),
-        "user_prompt_template": user_prompt_template.strip(),
+    # Everything else in the file is passed through untouched, because a mode
+    # that labels its own parts keeps those label templates here -- beside the
+    # prompt they belong to -- rather than hard-coded in Python. Keys starting
+    # with "_" are comments, as in model_config.json: JSON has none of its own.
+    config: dict[str, Any] = {
+        key: value for key, value in payload.items() if not key.startswith("_")
     }
+    config["system_prompt"] = system_prompt.strip()
+    config["user_prompt_template"] = user_prompt_template.strip()
+    return config
 
 
 def flatten_record_for_prompt(

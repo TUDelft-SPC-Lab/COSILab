@@ -22,12 +22,21 @@ __all__ = [
 # name -> "module path:class name". Add a mode by implementing BaseTaskMode and
 # adding one line here.
 #
+# The three named here are one axis: how much of the group's audio is stacked
+# into a single soundtrack, and therefore how much of it can be attributed to a
+# person.
+#
+#   sa   1 audio part    everyone stacked, person of interest included
+#   pa   2 audio parts   person of interest, and everyone else stacked
+#   fa   N audio parts   one per person, each labelled with their id
+#
 # A placeholder belongs in this table too, not outside it: an unfinished mode
 # that is merely absent looks to the caller exactly like a typo, whereas one that
 # is present and raises can say what remains to be written.
 MODE_MODULES: dict[str, str] = {
-    "participant_image": "intention_inference.modes.participant_image:ParticipantImageMode",
-    "participant_ids": "intention_inference.modes.participant_ids:ParticipantIdsMode",
+    "pa": "intention_inference.modes.pa:PartiallyStackedAudioMode",
+    "fa": "intention_inference.modes.fa:FlattenedAudioMode",
+    "sa": "intention_inference.modes.sa:StackedAudioMode",
 }
 
 # No default mode, for the reason --backend has none: which variant of the

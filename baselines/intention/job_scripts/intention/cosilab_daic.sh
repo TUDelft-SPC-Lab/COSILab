@@ -23,8 +23,8 @@
 #
 # Run `bash job_scripts/intention/cosilab_daic.sh --help` for the options.
 #
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode participant_image --index-range 0-250
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode fa --index-range 0-250
 
 # Absolute host paths. These are NOT container paths: the source below runs on
 # the host, before apptainer is involved. PROJECT_ROOT is what gets bound to

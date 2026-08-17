@@ -278,6 +278,10 @@ def main() -> None:
         raise FileNotFoundError(f"Prompt config not found: {prompt_config_path}")
 
     prompt_config = load_prompt_config(prompt_config_path)
+    # Handed over before any record is prepared: a mode that labels its own parts
+    # keeps those templates in the prompt config, and needs them while building
+    # turns as well as while rendering the prompt.
+    mode.configure(prompt_config)
     system_prompt = (
         args.system_prompt.strip()
         if isinstance(args.system_prompt, str) and args.system_prompt.strip()

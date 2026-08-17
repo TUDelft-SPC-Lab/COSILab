@@ -29,7 +29,10 @@ from .media import (
 
 __all__ = [
     "RecordContext",
+    "SpeakerTracks",
     "resolve_audio_bundle",
+    "resolve_per_speaker_audio",
+    "resolve_speaker_tracks",
     "resolve_video_media",
 ]
 
@@ -96,36 +99,38 @@ def resolve_video_media(
     )
 
 
-def resolve_audio_bundle(
-    record: Mapping[str, Any],
-    *,
-    record_index: int,
-    record_id: Any,
-    ctx: RecordContext,
-) -> tuple[dict[str, Any], str | None]:
-    """The participant's own track plus a single mixed conversation-floor track.
+@dataclass(frozen=True)
+class SpeakerTracks:
+    """Every speaker's own audio track, before any mode decides what to do with it.
 
-    Audio 2 is deliberately one file rather than one part per speaker: the task
-    asks about the indicated participant, and the others are context, so they are
-    summed into one soundtrack of the same duration. Which speakers those are is
-    ``select_audio_speakers``; the mixing and its length tolerance is
-    ``aggregate_conversation_floor_audio``.
+    ``participant`` is the person the question is about; ``conversation_floor``
+    is everyone else in their group, in the order the record listed them.
+    ``goa`` is the whole group -- the participant included -- sorted by id, which
+    is what a mode presenting people symmetrically should iterate.
     """
-    empty: dict[str, Any] = {
-        "speaker_ids": [],
-        "participant_speaker_id": None,
-        "conversation_floor_speaker_ids": [],
-        "source_audio_paths": [],
-        "rewritten_audio_paths": [],
-        "audio_paths": [],
-        "participant_audio_path": None,
-        "conversation_floor_audio_paths": [],
-        "aggregated_conversation_floor_audio_path": None,
-        "audio_warnings": [],
-    }
-    if ctx.no_audio:
-        return empty, None
 
+    participant_id: int
+    conversation_floor_ids: list[int]
+    paths: dict[int, Path]
+    source_paths: dict[int, str]
+    rewritten_paths: dict[int, str]
+
+    @property
+    def goa_ids(self) -> list[int]:
+        return sorted({self.participant_id, *self.conversation_floor_ids})
+
+
+def resolve_speaker_tracks(
+    record: Mapping[str, Any],
+    ctx: RecordContext,
+) -> tuple[SpeakerTracks | None, str | None]:
+    """Resolve one local audio file per speaker in the group.
+
+    Shared by every mode, because which track belongs to whom is a property of
+    the record rather than of the question. What differs between modes is only
+    what they then do with the tracks: hand them over one by one, or stack some
+    or all of them into a single soundtrack.
+    """
     resolved_media_prefix = effective_media_prefix(
         ctx.audio_media_path_prefix, ctx.media_path_prefix
     )
@@ -136,13 +141,13 @@ def resolve_audio_bundle(
     if not isinstance(audio_entries, Sequence) or isinstance(
         audio_entries, (str, bytes, bytearray)
     ):
-        return {}, "invalid_audio_list"
+        return None, "invalid_audio_list"
 
     speaker_selection = select_audio_speakers(record)
     if speaker_selection is None:
-        return {}, "invalid_speaker_selection"
+        return None, "invalid_speaker_selection"
 
-    participant_speaker_id, conversation_floor_speaker_ids = speaker_selection
+    participant_id, conversation_floor_ids = speaker_selection
 
     def resolve_audio_for_speaker(
         speaker_id: int,
@@ -174,30 +179,133 @@ def resolve_audio_bundle(
             resolved_audio_path,
         )
 
-    source_audio_paths: list[str] = []
-    rewritten_audio_paths: list[str] = []
-    conversation_floor_audio_paths: list[str] = []
+    paths: dict[int, Path] = {}
+    source_paths: dict[int, str] = {}
+    rewritten_paths: dict[int, str] = {}
 
-    resolved_participant_audio = resolve_audio_for_speaker(participant_speaker_id)
+    resolved_participant_audio = resolve_audio_for_speaker(participant_id)
     if resolved_participant_audio == (None, None, None):
-        return {}, "participant_audio_not_found"
-
-    source_participant_audio, rewritten_participant_audio, participant_audio = (
+        return None, "participant_audio_not_found"
+    source_paths[participant_id], rewritten_paths[participant_id], paths[participant_id] = (
         resolved_participant_audio
     )
-    source_audio_paths.append(str(source_participant_audio))
-    rewritten_audio_paths.append(str(rewritten_participant_audio))
 
-    resolved_conversation_floor_paths: list[Path] = []
-    for speaker_id in conversation_floor_speaker_ids:
+    for speaker_id in conversation_floor_ids:
         resolved_floor_audio = resolve_audio_for_speaker(speaker_id)
         if resolved_floor_audio == (None, None, None):
-            return {}, "conversation_floor_audio_not_found"
-        source_audio_path, rewritten_audio_path, resolved_audio_path = resolved_floor_audio
-        source_audio_paths.append(str(source_audio_path))
-        rewritten_audio_paths.append(str(rewritten_audio_path))
-        conversation_floor_audio_paths.append(str(resolved_audio_path))
-        resolved_conversation_floor_paths.append(resolved_audio_path)
+            return None, "conversation_floor_audio_not_found"
+        source_paths[speaker_id], rewritten_paths[speaker_id], paths[speaker_id] = (
+            resolved_floor_audio
+        )
+
+    return (
+        SpeakerTracks(
+            participant_id=participant_id,
+            conversation_floor_ids=conversation_floor_ids,
+            paths=paths,
+            source_paths=source_paths,
+            rewritten_paths=rewritten_paths,
+        ),
+        None,
+    )
+
+
+def resolve_per_speaker_audio(
+    record: Mapping[str, Any],
+    ctx: RecordContext,
+) -> tuple[dict[str, Any], str | None]:
+    """One track per person, nothing stacked.
+
+    The group is reported in ascending id order rather than participant-first:
+    a mode that presents people symmetrically and only names the one of interest
+    at the end would give the answer away by ordering.
+    """
+    empty: dict[str, Any] = {
+        "goa_speaker_ids": [],
+        "participant_speaker_id": None,
+        "conversation_floor_speaker_ids": [],
+        "source_audio_paths": [],
+        "rewritten_audio_paths": [],
+        "audio_paths": [],
+        "speaker_audio_paths": {},
+        "participant_audio_path": None,
+        "audio_warnings": [],
+    }
+    if ctx.no_audio:
+        return empty, None
+
+    tracks, skip_reason = resolve_speaker_tracks(record, ctx)
+    if tracks is None:
+        return {}, skip_reason
+
+    goa_ids = tracks.goa_ids
+    return (
+        {
+            "goa_speaker_ids": goa_ids,
+            "participant_speaker_id": tracks.participant_id,
+            "conversation_floor_speaker_ids": tracks.conversation_floor_ids,
+            "source_audio_paths": [tracks.source_paths[i] for i in goa_ids],
+            "rewritten_audio_paths": [tracks.rewritten_paths[i] for i in goa_ids],
+            "audio_paths": [str(tracks.paths[i]) for i in goa_ids],
+            # The id -> track map, so a result file says which part was whose
+            # without anyone having to re-derive it from the ordering.
+            "speaker_audio_paths": {str(i): str(tracks.paths[i]) for i in goa_ids},
+            "participant_audio_path": str(tracks.paths[tracks.participant_id]),
+            "audio_warnings": [],
+        },
+        None,
+    )
+
+
+def resolve_audio_bundle(
+    record: Mapping[str, Any],
+    *,
+    record_index: int,
+    record_id: Any,
+    ctx: RecordContext,
+) -> tuple[dict[str, Any], str | None]:
+    """The participant's own track plus a single mixed conversation-floor track.
+
+    Audio 2 is deliberately one file rather than one part per speaker: the task
+    asks about the indicated participant, and the others are context, so they are
+    summed into one soundtrack of the same duration. The mixing and its length
+    tolerance is ``aggregate_conversation_floor_audio``.
+    """
+    empty: dict[str, Any] = {
+        "speaker_ids": [],
+        "participant_speaker_id": None,
+        "conversation_floor_speaker_ids": [],
+        "source_audio_paths": [],
+        "rewritten_audio_paths": [],
+        "audio_paths": [],
+        "participant_audio_path": None,
+        "conversation_floor_audio_paths": [],
+        "aggregated_conversation_floor_audio_path": None,
+        "audio_warnings": [],
+    }
+    if ctx.no_audio:
+        return empty, None
+
+    tracks, skip_reason = resolve_speaker_tracks(record, ctx)
+    if tracks is None:
+        return {}, skip_reason
+
+    participant_speaker_id = tracks.participant_id
+    conversation_floor_speaker_ids = tracks.conversation_floor_ids
+    participant_audio = tracks.paths[participant_speaker_id]
+
+    # Participant first, then the floor in record order: this is the order the
+    # pre-mode implementation wrote these lists in, and result files already
+    # carry it.
+    ordered_ids = [participant_speaker_id, *conversation_floor_speaker_ids]
+    source_audio_paths = [tracks.source_paths[i] for i in ordered_ids]
+    rewritten_audio_paths = [tracks.rewritten_paths[i] for i in ordered_ids]
+    resolved_conversation_floor_paths = [
+        tracks.paths[i] for i in conversation_floor_speaker_ids
+    ]
+    conversation_floor_audio_paths = [
+        str(path) for path in resolved_conversation_floor_paths
+    ]
 
     aggregate_audio_name = (
         f"{record_index:06d}_{safe_filename_part(record_id)}_conversation_floor.wav"

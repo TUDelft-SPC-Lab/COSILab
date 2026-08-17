@@ -1,12 +1,22 @@
-"""Grounding the question with a reference photo of the indicated participant.
+"""PA -- partially stacked audio.
 
-The model is shown one crop -- ``participant_<n>.png`` -- and has to find that
-person in the clip itself. No identifier is passed: the participant's number
-selects the file and the audio track, and then stays out of the prompt, so the
-grounding is entirely facial. The conversation-floor speakers are anonymous by
-construction, since their tracks arrive summed into one soundtrack.
+The middle of the three audio conditions. The person of interest keeps their own
+soundtrack, and everyone else in their group is summed into a second one: two
+audio parts, however many people are in the group. SA stacks all of them into
+one, FA stacks none of them.
 
-This is the task as it was run before modes existed, moved unchanged.
+Grounding is a single crop -- ``participant_<n>.png`` -- and the model has to
+find that person in the clip itself. No identifier is passed: the participant's
+number selects the file and the audio track, and then stays out of the prompt,
+so the grounding is entirely facial, and the other speakers are anonymous by
+construction because their tracks arrive summed.
+
+This is the task exactly as it ran before modes existed, and it is kept that way
+on purpose: results already collected under it stay comparable. In particular
+the prompt's "<image>", "<audio1>" and "<audio2>" markers are literal text that
+resolve to nothing -- the real tokens are all emitted ahead of the text block --
+so the binding rests on part order. FA does not repeat that; PA keeps it rather
+than silently becoming a different condition.
 """
 
 from __future__ import annotations
@@ -20,12 +30,12 @@ from models.base import ChatMessage, MediaPart
 from ..records import RecordContext
 from .base import BaseTaskMode
 
-__all__ = ["ParticipantImageMode"]
+__all__ = ["PartiallyStackedAudioMode"]
 
 
-class ParticipantImageMode(BaseTaskMode):
-    name = "participant_image"
-    prompt_config_path = Path(__file__).resolve().with_name("prompt_participant_image.json")
+class PartiallyStackedAudioMode(BaseTaskMode):
+    name = "pa"
+    prompt_config_path = Path(__file__).resolve().with_name("prompt_pa.json")
 
     def resolve_reference_media(
         self,

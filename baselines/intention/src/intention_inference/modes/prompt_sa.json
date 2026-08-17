@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "PLACEHOLDER. The sa mode raises before this file is ever read (see modes/sa.py).",
+    "It exists so the mode's prompt_config_path points somewhere real.",
+    "",
+    "TODO: write a template for the stacked-audio condition. The one thing it must",
+    "NOT do is borrow PA's wording. PA's prompt says audio 1 is the participant's",
+    "own voice and audio 2 is everyone else; SA has a single soundtrack containing",
+    "everyone including the participant, so the prompt has to say that voices are",
+    "mixed and not separable. Claiming otherwise would tell the model something",
+    "false about its own input, which is worse than saying nothing.",
+    "",
+    "Templates render against the record's flattened fields, so {participant} gives",
+    "the person of interest. {conversation_floor} does not render -- it is a list,",
+    "and the flattener keeps only scalars; see how modes/fa.py supplies {goa_ids}",
+    "through render_user_prompt if SA needs the group listed."
+  ],
+
+  "system_prompt": "You are a helpful multimodal assistant.",
+
+  "user_prompt_template": "TODO: unwritten. The sa mode is a placeholder; see modes/sa.py."
+}

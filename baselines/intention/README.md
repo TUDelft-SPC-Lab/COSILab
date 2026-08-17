@@ -2,7 +2,7 @@
 
 This folder contains the INGroup intention-recognition baseline that prompts a multimodal model on 30-second clips, plus analysis code for survey responses and model-human annotation comparison.
 
-Two things vary independently, and neither is a property of the code. Which model runs is a `--backend` choice -- `gemma` and `qwen7b` today -- and the task itself imports no torch and knows nothing about either. What is asked of it, and what grounds the question, is a `--mode` choice: `participant_image` today, `participant_ids` reserved as a placeholder. Any mode runs on any backend.
+Two things vary independently, and neither is a property of the code. Which model runs is a `--backend` choice -- `gemma` and `qwen7b` today -- and the task itself imports no torch and knows nothing about either. What is asked of it is a `--mode` choice, and the three modes are one experimental axis: how much of the group's audio is stacked into a single soundtrack, and therefore how much of it can be attributed to a person. Any mode runs on any backend.
 
 The inference code is packaged as an installable Python project (`intention_inference`) built with [uv](https://docs.astral.sh/uv/). The annotation and survey analysis code is kept separately as standalone notebooks and R scripts.
 
@@ -23,10 +23,12 @@ src/intention_inference/            the task: what to ask, of which clips
   modes/                            the task modes: what is asked, and what grounds it
     base.py                         the interface every mode implements
     registry.py                     mode name -> class, imported lazily
-    participant_image.py            grounding by a reference photo (the default today)
-    participant_ids.py              grounding by participant id (PLACEHOLDER)
-    prompt_participant_image.json   the participant_image mode's prompt
-    prompt_participant_ids.json     stub, unwritten
+    pa.py                           partially stacked audio
+    fa.py                           flattened audio
+    sa.py                           stacked audio (PLACEHOLDER)
+    prompt_pa.json                  PA's prompt (unchanged since before modes existed)
+    prompt_fa.json                  FA's prompt, labels included
+    prompt_sa.json                  stub, unwritten
   __main__.py                       entry point for `python -m intention_inference`
 src/models/                         the model backends the task runs on
   base.py                           the interface every backend implements
@@ -73,15 +75,18 @@ items
 data
 ```
 
-Each retained record is converted into one chat turn. Every mode gets the same clip and the same audio, prepared by `records.py`:
+Each retained record is converted into one chat turn. `records.py` resolves what every mode needs from the filesystem:
 
 - the video clip from the record's `video` field
-- the participant's own audio from `audios[participant - 1]`
-- aggregated conversation-floor audio mixed from the speaker IDs in `conversation_floor` (the participant's own ID is excluded and duplicates are dropped)
+- one audio track per speaker, from `audios[speaker_id - 1]` -- the list is positional, so speaker 1 is `audios[0]`
 
-What the mode adds is the grounding -- which reference media says *who* is being asked about -- plus the rendered prompt and the order of the parts. For `participant_image` the grounding is an indicated participant image from `participant_<id>.png` under `--participant-image-root`, selected by the record's `participant` field.
+What differs between modes is what happens to those tracks. `records.resolve_audio_bundle` keeps the participant's own and sums everyone else's into one soundtrack (PA); `records.resolve_per_speaker_audio` hands them over untouched (FA); a whole-group mix is what SA will need. Both sit on the same `records.resolve_speaker_tracks`, so which track belongs to whom is decided in exactly one place.
 
-Records are skipped before inference, with the reason recorded, when the video or the mode's reference media is missing or not on disk, when the audio list or speaker selection is malformed, when participant or conversation-floor audio cannot be resolved, when audio aggregation fails, or when a resolved path matches an `--exclude-video-substring` / `--exclude-audio-substring` filter.
+The mode also decides which reference images go with it, the rendered prompt and the order of the parts. Images come from `participant_<id>.png` under `--participant-image-root`.
+
+The group of analysis (GOA) is derived, not read from a field: the manifest has no group of its own, so it is `{participant} ∪ conversation_floor`. The union settles it whether or not `conversation_floor` already lists the participant.
+
+Records are skipped before inference, with the reason recorded, when the video or the mode's reference media is missing or not on disk (`participant_image_not_found` for PA's single crop, `goa_participant_image_not_found` when FA is missing a photograph for *someone* in the group), when the audio list or speaker selection is malformed, when participant or conversation-floor audio cannot be resolved, when audio aggregation fails, or when a resolved path matches an `--exclude-video-substring` / `--exclude-audio-substring` filter.
 
 Each mode ships its own prompt config, and `--prompt-config` overrides it. A prompt config provides:
 
@@ -90,13 +95,15 @@ Each mode ships its own prompt config, and `--prompt-config` overrides it. A pro
 
 If `user_prompt_template` (or `prompt`) is absent, the loader assembles the template from structured `intro`, `questions`, and `examples` fields. Templates are rendered with the record's flattened fields, so `{field}` and `{nested.field}` placeholders are filled from the record, `{record_json}` expands to the whole record, and unknown placeholders are left untouched.
 
-The `participant_image` prompt asks the model to identify the indicated participant's intentions, including timestamps, confidence, reasoning, intensity, and counterfactual explanations. If no clear intention is visible, the model is instructed to return the no-intention format. It never names the participant by number: the grounding is entirely facial, and the conversation-floor speakers stay anonymous because their tracks arrive summed into one soundtrack.
+Every mode's prompt asks the model to identify the indicated participant's intentions, including timestamps, confidence, reasoning, intensity, and counterfactual explanations. If no clear intention is visible, the model is instructed to return the no-intention format.
+
+FA's prompt config carries more than the two keys above: `preamble`, `audio_label`, `image_label` and `video_label` are the text parts it interleaves between its media. They live there rather than in Python so the exact wording of a run stays diffable. `load_prompt_config` passes through every key it does not itself normalise, and `BaseTaskMode.configure` hands the resolved config to the mode before any record is prepared.
 
 The model is reached only through `models/`: `--backend` names it, `models/registry.py` resolves the name to a class, and `model_config.json` says which weights it loads with what decoding parameters. Task code never imports torch.
 
-The question is reached the same way through `modes/`: `--mode` names it, `modes/registry.py` resolves the name to a class, and the mode owns its reference media, its prompt config and its turn layout. Add a mode by implementing `modes.base.BaseTaskMode` and adding one line to `MODE_MODULES`. `BaseTaskMode.prepare_record` is the default composition -- clip, reference media, audio, prompt -- and a mode that does not fit it overrides it and composes `records.resolve_video_media` / `records.resolve_audio_bundle` itself.
+The question is reached the same way through `modes/`: `--mode` names it, `modes/registry.py` resolves the name to a class, and the mode owns its reference media, its prompt config and its turn layout. Add a mode by implementing `modes.base.BaseTaskMode` and adding one line to `MODE_MODULES`. `BaseTaskMode.prepare_record` is the default composition -- clip, reference media, audio, prompt -- and a mode that does not fit it overrides it and composes `records.resolve_video_media`, `records.resolve_speaker_tracks`, `records.resolve_audio_bundle` or `records.resolve_per_speaker_audio` itself -- which is exactly what `fa` does.
 
-`participant_ids` is registered but unimplemented: selecting it raises at startup, before the model config or the manifest is read, and says what remains to be written.
+`sa` is registered but unimplemented: selecting it raises at startup, before the model config or the manifest is read, and says what remains to be written.
 
 Frame sampling is one policy for every backend, set in `model_config.json` under `defaults`:
 
@@ -110,17 +117,48 @@ max_video_frames  ceiling (32)
 
 Images, audio, and video frames are decoded ahead of the processor call with Pillow, librosa, and PyAV. If a Gemma processor ships no chat template, a built-in Gemma 4 fallback template is used.
 
-The turn layout belongs to the mode, because part order is the order the model meets the placeholders in. For `participant_image`, every record's input contains:
+### The three modes
+
+The axis is how much of the group's audio is stacked, and therefore how much of it can be attributed to a person:
+
+| mode | audio parts | grounding | status |
+| --- | --- | --- | --- |
+| `sa` | 1 -- everyone stacked, participant included | one crop of the participant | **placeholder, raises** |
+| `pa` | 2 -- the participant, and everyone else stacked | one crop of the participant | runs; unchanged since before modes existed |
+| `fa` | N -- one per person, labelled | a photograph per person, labelled | runs |
+
+The turn layout belongs to the mode, because part order is the order the model meets the placeholders in. `pa` produces:
 
 ```text
 image: participant reference image
 audio: participant audio
 audio: mixed conversation-floor audio
 video: sampled video frames
-text: system prompt + rendered user prompt
+text:  system prompt + rendered user prompt
 ```
 
-Note that the `<image>`, `<audio1>` and `<audio2>` markers in that prompt's text are literal characters, not placeholders: the real media tokens are emitted at the parts' positions, all of them ahead of the text block. The binding between the prose and the media therefore rests on part order alone. Worth not reproducing in a new mode -- interleave text between the parts instead, or describe them strictly by order.
+`fa` produces, for a group of participants 1, 3 and 4:
+
+```text
+text:  preamble
+text:  "Audio of participant 1:"        audio: participant 1's track
+text:  "Audio of participant 3:"        audio: participant 3's track
+text:  "Audio of participant 4:"        audio: participant 4's track
+text:  "Photograph of participant 1:"   image: participant_1.png
+text:  "Photograph of participant 3:"   image: participant_3.png
+text:  "Photograph of participant 4:"   image: participant_4.png
+text:  "Video of the group:"            video: sampled video frames
+text:  system prompt + rendered user prompt   <- names the participant of interest
+```
+
+Two properties of that shape are load-bearing and easy to undo by accident:
+
+- **People are listed in ascending id order, never participant-first.** Withholding who the question is about until the last part only means anything if the ordering does not leak it.
+- **Ids are bound by interleaved text, not by position.** A text part naming the speaker precedes each media part, so the association holds regardless of how a backend lays out its placeholders. Both backends render text parts inline between media tokens, which is what makes this work.
+
+`pa` does neither, and is kept that way deliberately. The `<image>`, `<audio1>` and `<audio2>` markers in its prompt are literal characters, not placeholders: the real media tokens are emitted at the parts' positions, all of them ahead of the text block, so those markers resolve to nothing and the binding rests on part order alone. Fixing it would make `pa` a different condition and break comparability with results already collected under it. `fa` does not repeat the mistake, and a new mode should not either.
+
+FA's user prompt gets `{participant}`, `{goa_ids}`, `{other_ids}` and `{goa_size}`. Note that `{conversation_floor}` does **not** render in any mode: it is a list, and the template flattener keeps only scalars -- which is why `fa.render_user_prompt` supplies the group as text itself.
 
 The aggregated conversation-floor mixes are written next to the output file, under:
 
@@ -136,7 +174,7 @@ The output JSON contains:
 - `__skipped__`: records skipped before inference and why
 - `results`: one item per processed record, including source/rewritten/resolved media paths, speaker IDs, audio warnings, the rendered prompt, and the model response in `assistant`
 
-`__summary__` records which backend ran and in which mode, the resolved weights path, the decoding parameters and the frame policy, so a result file answers "what produced this" without anyone having to find the command that made it. Beyond the shared keys, each result row carries whatever the mode's `result_fields` contributes -- for `participant_image`, the reference image that was shown.
+`__summary__` records which backend ran and in which mode, the resolved weights path, the decoding parameters and the frame policy, so a result file answers "what produced this" without anyone having to find the command that made it. Beyond the shared keys, each result row carries whatever the mode's `result_fields` contributes -- for `pa`, the reference image that was shown; for `fa`, the id-to-track and id-to-photograph maps, so nobody has to re-derive from part order which part was whose.
 
 Generation errors do not abort the run: the failing record's `assistant` field is set to `[ERROR] ...` and counted in `__summary__.error_count`.
 
@@ -145,7 +183,7 @@ Generation errors do not abort the run: the failing record's `assistant` field i
 ```bash
 uv run intention-inference \
   --backend gemma \
-  --mode participant_image \
+  --mode pa \
   --input-json /path/to/annotation_clips.json \
   --participant-image-root /path/to/participant_imgs \
   --video-media-path-prefix "https://example/video_segs" \
@@ -166,7 +204,7 @@ Media path options:
 - `--video-media-path-prefix` / `--video-local-path-prefix`: video-specific overrides of the shared pair.
 - `--audio-media-path-prefix` / `--audio-local-path-prefix`: audio-specific overrides of the shared pair.
 - `--media-root`: root used to resolve relative media paths that do not exist next to the manifest.
-- `--participant-image-root`: folder containing `participant_<n>.png`. Used by the `participant_image` mode.
+- `--participant-image-root`: folder containing `participant_<n>.png`. `pa` reads one file from it; `fa` reads one per person in the group.
 
 Selection and filtering:
 
@@ -221,9 +259,9 @@ qwen7b SIF     /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference
 Submit:
 
 ```bash
-sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image
-sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode participant_image --index-range 0-99
-sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image --no-audio
+sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa
+sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode fa --index-range 0-99
+sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa --no-audio
 ```
 
 Override input and output:
@@ -231,7 +269,7 @@ Override input and output:
 ```bash
 sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh \
   --backend qwen7b \
-  --mode participant_image \
+  --mode fa \
   --input-json /path/to/annotation_clips.json \
   --output /path/to/model_responses/run.json
 ```

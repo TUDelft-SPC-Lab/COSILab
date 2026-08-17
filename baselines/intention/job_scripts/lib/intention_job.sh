@@ -18,9 +18,9 @@
 # the modes and their prompts live in intention_inference/modes/.
 #
 # Submit through the stub, for example:
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode participant_image --index-range 0-250
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image --no-audio --limit 20
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode fa --index-range 0-250
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa --no-audio --limit 20
 
 set -euo pipefail
 
@@ -88,8 +88,8 @@ usage() {
     echo "  --backend NAME                             Model to run the task on. Required." >&2
     echo "                                             Known: $(intention_known_backends | tr '\n' ' ')" >&2
     echo "  --mode NAME                                Task mode: what is asked. Required." >&2
-    echo "                                             Names live in modes/registry.py; run with" >&2
-    echo "                                             a wrong one to be shown the list." >&2
+    echo "                                             pa (partially stacked audio), fa (flattened)," >&2
+    echo "                                             sa (stacked, not implemented yet)." >&2
     echo "  --input-json PATH                          Default: ${input_json}" >&2
     echo "  --output PATH                              Exact output JSON file path" >&2
     echo "  --output-dir PATH                          Default: ${output_dir}" >&2
