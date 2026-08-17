@@ -1,7 +1,7 @@
 [project]
 name = "intention_inference"
 version = "0.1.0"
-description = "Gemma 4 multimodal ingroup intention inference from a JSON manifest"
+description = "Multimodal ingroup intention inference from a JSON manifest"
 readme = "README.md"
 authors = [
     { name = "Zonghuan Li", email = "z.li-25@tudelft.nl" }
@@ -16,11 +16,26 @@ dependencies = [
     "soundfile",
     "Pillow",
     "av",
+    # Qwen2.5-Omni's preprocessing. Not vendored in this repo and not needed on
+    # the cluster, where it comes from the container image -- models/qwen/engine.py
+    # imports it lazily for exactly that reason. Declared so an off-cluster
+    # `uv run` can still resolve it.
+    "qwen-omni-utils",
 ]
 
 [project.scripts]
 intention-inference = "intention_inference.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.21,<0.12.0"]
+requires = ["uv_build>=0.11.21,<0.13.0"]
 build-backend = "uv_build"
+
+# Two top-level packages in one distribution: the task and the model backends it
+# runs on. Without this the backend would build only `intention_inference` and a
+# wheel install would import `models` from wherever else it could find one.
+#
+# Nothing on the cluster depends on this: the job script runs
+# `python -m intention_inference` with PYTHONPATH pointed at src/, so the wheel is
+# a local-development concern.
+[tool.uv.build-backend]
+module-name = ["intention_inference", "models"]
