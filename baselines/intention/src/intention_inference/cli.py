@@ -1,22 +1,33 @@
+"""Command line and order of operations for intention inference.
+
+This module owns the task, not the model: manifest loading, path resolution,
+record filtering, prompt rendering and result writing. The model is reached only
+through the backend API in ``models/`` (see ``models.base.BaseMultimodalModel``),
+so the same task runs on any backend the registry knows about -- ``--backend``
+picks it, and ``model_config.json`` says which weights it loads with what
+decoding parameters.
+
+The work itself is in ``engine.py``. What is left here is the argument surface
+and the sequence, which is chosen so that anything cheap that can fail does so
+before the weights are paid for.
+"""
+
 from __future__ import annotations
 
 import argparse
-import json
-import os
-from collections import Counter
 from pathlib import Path
-from typing import Any
 
-from transformers import AutoModelForMultimodalLM, AutoProcessor
+from models.config import load_model_config, validate_capabilities
+from models.registry import available_backends, backend_capabilities, load_model
 
-from .gemma import combine_system_and_user_prompt, infer_turn, select_video_num_frames
-
-DEFAULT_MODEL_PATH = os.environ.get("MODEL_PATH", "/scratch/zli33/models/GemmaE4B")
-from .manifest import get_nested_value, load_manifest_records
+from . import engine
+from .manifest import load_manifest_records
 from .prompt import load_prompt_config
-from .records import prepare_record
 
 DEFAULT_PROMPT_CONFIG_PATH = Path(__file__).resolve().with_name("prompt_ingroup.json")
+# This task's own weights, decoding parameters and frame policy. It sits beside
+# the prompt config because those numbers are a property of what is being asked.
+DEFAULT_MODEL_CONFIG_PATH = Path(__file__).resolve().with_name("model_config.json")
 DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
     "/tudelft.net/staff-umbrella/neon/B1_pipeline/participant_imgs"
 )
@@ -24,12 +35,17 @@ DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Gemma 4 ingroup inference from a flat JSON manifest."
+        description="Run multimodal ingroup intention inference from a flat JSON manifest."
     )
     parser.add_argument(
-        "--model",
-        default=DEFAULT_MODEL_PATH,
-        help="Local Gemma model directory or Hugging Face model id.",
+        "--backend",
+        required=True,
+        choices=available_backends(),
+        help=(
+            "Model backend to run the task on. Required and not defaulted: it decides "
+            "which weights run and where the results are filed, so a run should never "
+            "be attributed to a model chosen by omission."
+        ),
     )
     parser.add_argument(
         "--input-json",
@@ -40,14 +56,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("ingroup_results.json"),
-        help="Path to the output JSON file.",
+        default=None,
+        help=(
+            "Path to the output JSON file. Defaults to "
+            "ingroup_results/<backend>/<input stem>.json beside the working directory."
+        ),
     )
     parser.add_argument(
         "--prompt-config",
         type=Path,
         default=DEFAULT_PROMPT_CONFIG_PATH,
         help="Prompt config JSON. Defaults to prompt_ingroup.json alongside this package.",
+    )
+    parser.add_argument(
+        "--model-config",
+        type=Path,
+        default=DEFAULT_MODEL_CONFIG_PATH,
+        help=(
+            "Model and decoding parameters JSON (weights, token budget, sampling, frame "
+            "policy, backend options). Defaults to model_config.json alongside this "
+            "package. These are not CLI flags: edit the file and resubmit."
+        ),
     )
     parser.add_argument(
         "--media-path-prefix",
@@ -114,31 +143,6 @@ def parse_args() -> argparse.Namespace:
         help="Optional override for the system prompt from the prompt config.",
     )
     parser.add_argument(
-        "--max-new-tokens",
-        type=int,
-        default=512,
-        help="Maximum generated tokens.",
-    )
-    parser.add_argument(
-        "--enable-thinking",
-        action="store_true",
-        help="Enable Gemma thinking mode in the chat template when supported.",
-    )
-    parser.add_argument(
-        "--do-sample",
-        action="store_true",
-        help="Enable sampling. By default generation is deterministic.",
-    )
-    parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--top-p", type=float, default=0.95)
-    parser.add_argument("--top-k", type=int, default=64)
-    parser.add_argument(
-        "--max-video-frames",
-        type=int,
-        default=32,
-        help="Maximum frames to sample per video.",
-    )
-    parser.add_argument(
         "--no-audio",
         action="store_true",
         help="Run video-only inference by omitting separate audio inputs.",
@@ -176,8 +180,54 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def default_output_path(args: argparse.Namespace, input_json_path: Path) -> Path:
+    """Where results land when --output is not given.
+
+    The backend is a directory component: two backends run over the same manifest
+    produce the same file name, and without this the second would silently
+    overwrite the first.
+    """
+    stem = input_json_path.stem
+    if args.start_index or args.end_index is not None:
+        stem = f"{stem}_{args.start_index}-{args.end_index}"
+    return Path("ingroup_results") / args.backend / f"{stem}.json"
+
+
+def resolve_optional_path(value: Path | None) -> Path | None:
+    return None if value is None else value.expanduser().resolve()
+
+
 def main() -> None:
     args = parse_args()
+
+    # Resolved and checked first, before anything is loaded or prepared: a
+    # parameter the backend cannot honour is refused rather than silently
+    # dropped, because a run that quietly ignored one is indistinguishable
+    # afterwards from a run that never asked for it.
+    model_config_path = args.model_config.expanduser().resolve()
+    if not model_config_path.is_file():
+        raise FileNotFoundError(f"Model config not found: {model_config_path}")
+    model_config = load_model_config(model_config_path, args.backend)
+    validate_capabilities(model_config, backend_capabilities(args.backend))
+
+    # The weights are named only in the config, so a typo there would otherwise
+    # surface as a transformers error after every record had been prepared and
+    # every audio mix written. Only for an absolute path: a bare model_id is a
+    # hub id, which only the backend can resolve.
+    if model_config.model_id is not None and Path(model_config.model_id).is_absolute():
+        weights_path = Path(model_config.model_id)
+        if not weights_path.is_dir():
+            # Two very different causes, one symptom, and the second is the
+            # confusing one: the path can be plainly there on the login node and
+            # still be missing here, because only the shares in HOST_BIND_PATHS
+            # (job_scripts/lib/intention_job.sh) are bound into the container.
+            raise FileNotFoundError(
+                f"{model_config_path}: backends.{args.backend}.model_id points at "
+                f"{weights_path}, which is not a directory here. Either the path is wrong "
+                f"-- fix it there, the weights are not a command-line flag -- or it exists "
+                f"on the host but is not bound into the container, in which case add its "
+                f"share to HOST_BIND_PATHS in job_scripts/lib/intention_job.sh."
+            )
 
     if args.start_index < 0:
         raise ValueError(f"--start-index must be non-negative: {args.start_index}")
@@ -188,22 +238,16 @@ def main() -> None:
         )
 
     input_json_path = args.input_json.expanduser().resolve()
-    output_path = args.output.expanduser().resolve()
     prompt_config_path = args.prompt_config.expanduser().resolve()
-    media_root = None if args.media_root is None else args.media_root.expanduser().resolve()
-    local_path_prefix = (
-        None if args.local_path_prefix is None else args.local_path_prefix.expanduser().resolve()
-    )
-    video_local_path_prefix = (
-        None
-        if args.video_local_path_prefix is None
-        else args.video_local_path_prefix.expanduser().resolve()
-    )
-    audio_local_path_prefix = (
-        None
-        if args.audio_local_path_prefix is None
-        else args.audio_local_path_prefix.expanduser().resolve()
-    )
+    output_path = (
+        default_output_path(args, input_json_path)
+        if args.output is None
+        else args.output
+    ).expanduser().resolve()
+    media_root = resolve_optional_path(args.media_root)
+    local_path_prefix = resolve_optional_path(args.local_path_prefix)
+    video_local_path_prefix = resolve_optional_path(args.video_local_path_prefix)
+    audio_local_path_prefix = resolve_optional_path(args.audio_local_path_prefix)
     participant_image_root = args.participant_image_root.expanduser().resolve()
 
     if not input_json_path.is_file():
@@ -230,7 +274,10 @@ def main() -> None:
         f"[INFO] Selected manifest index range: "
         f"{args.start_index}-{end_index} ({len(selected_records)} record(s))"
     )
+    print(f"[INFO] Backend: {args.backend}")
+    print(f"[INFO] Model config: {model_config_path}")
     print(f"[INFO] Prompt config: {prompt_config_path}")
+    print(f"[INFO] Output: {output_path}")
     print(f"[INFO] Media path prefix: {args.media_path_prefix}")
     print(f"[INFO] Local path prefix: {local_path_prefix}")
     print(f"[INFO] Video media path prefix: {args.video_media_path_prefix}")
@@ -239,170 +286,56 @@ def main() -> None:
     print(f"[INFO] Audio local path prefix: {audio_local_path_prefix}")
     print(f"[INFO] Participant image root: {participant_image_root}")
     print(f"[INFO] No audio: {args.no_audio}")
-    print(f"[INFO] Max video frames: {args.max_video_frames}")
-
-    kept_records: list[dict[str, Any]] = []
-    skipped_records: list[dict[str, Any]] = []
-    skip_counter: Counter[str] = Counter()
-    manifest_dir = input_json_path.parent
-    aggregated_audio_dir = output_path.parent / "_audio_mixes" / output_path.stem
-
-    for record_index, record in selected_records:
-        prepared, skip_reason = prepare_record(
-            record=record,
-            record_index=record_index,
-            id_key=args.id_key,
-            manifest_dir=manifest_dir,
-            media_root=media_root,
-            media_path_prefix=args.media_path_prefix,
-            local_path_prefix=local_path_prefix,
-            video_media_path_prefix=args.video_media_path_prefix,
-            video_local_path_prefix=video_local_path_prefix,
-            audio_media_path_prefix=args.audio_media_path_prefix,
-            audio_local_path_prefix=audio_local_path_prefix,
-            participant_image_root=participant_image_root,
-            no_audio=args.no_audio,
-            aggregated_audio_dir=aggregated_audio_dir,
-            exclude_video_substrings=args.exclude_video_substring,
-            exclude_audio_substrings=args.exclude_audio_substring,
-            user_prompt_template=prompt_config["user_prompt_template"],
-        )
-        if prepared is None:
-            skip_reason = skip_reason or "filtered_out"
-            skip_counter[skip_reason] += 1
-            skipped_records.append(
-                {
-                    "record_index": record_index,
-                    "record_id": str(get_nested_value(record, args.id_key) or record_index),
-                    "skip_reason": skip_reason,
-                }
-            )
-            continue
-        kept_records.append(prepared)
-        if args.limit is not None and len(kept_records) >= args.limit:
-            break
-
     print(
-        f"[INFO] Retained {len(kept_records)} record(s); "
-        f"skipped {sum(skip_counter.values())} before inference."
+        f"[INFO] Frame policy: fps={model_config.video_fps} "
+        f"min={model_config.min_video_frames} max={model_config.max_video_frames}"
     )
-    if skip_counter:
-        for reason, count in sorted(skip_counter.items()):
-            print(f"[INFO]   skip {reason}: {count}")
-    if not kept_records:
+
+    aggregated_audio_dir = output_path.parent / "_audio_mixes" / output_path.stem
+    prepared = engine.prepare_records(
+        args=args,
+        selected_records=selected_records,
+        manifest_dir=input_json_path.parent,
+        media_root=media_root,
+        local_path_prefix=local_path_prefix,
+        video_local_path_prefix=video_local_path_prefix,
+        audio_local_path_prefix=audio_local_path_prefix,
+        participant_image_root=participant_image_root,
+        aggregated_audio_dir=aggregated_audio_dir,
+        user_prompt_template=prompt_config["user_prompt_template"],
+    )
+    if not prepared.kept:
         print("[WARN] Nothing to process. Exiting.")
         return
 
-    print(f"[INFO] Loading Gemma model: {args.model}")
-    processor = AutoProcessor.from_pretrained(args.model)
-    model = AutoModelForMultimodalLM.from_pretrained(
-        args.model,
-        dtype="auto",
-        device_map="auto",
+    # Loaded only once every record has been prepared, so a manifest or media
+    # problem surfaces before paying for the weights.
+    model = load_model(args.backend, model_config.model_id, **model_config.load_kwargs)
+
+    results = engine.run_inference_pass(
+        prepared=prepared,
+        system_prompt=system_prompt,
+        no_audio=args.no_audio,
+        model=model,
+        model_config=model_config,
     )
-    model.eval()
 
-    results: list[dict[str, Any]] = []
-    total_records = len(kept_records)
-    for processed_index, item in enumerate(kept_records, start=1):
-        print(
-            f"[{processed_index}/{total_records}] "
-            f"{item['record_id']} -> {Path(item['video_path']).name}",
-            flush=True,
-        )
-        video_num_frames = select_video_num_frames(
-            video_path=item["video_path"],
-            max_video_frames=args.max_video_frames,
-        )
-        text_prompt = combine_system_and_user_prompt(
-            system_prompt=system_prompt,
-            user_prompt=item["user_prompt"],
-        )
-
-        user_content: list[dict[str, Any]] = []
-        user_content.append({"type": "image", "image": item["participant_image_path"]})
-        if not args.no_audio:
-            for audio_path in item["audio_paths"]:
-                user_content.append({"type": "audio", "audio": audio_path})
-        user_content.extend(
-            [
-                {
-                    "type": "video",
-                    "video": item["video_path"],
-                    "num_frames": video_num_frames,
-                },
-                {"type": "text", "text": text_prompt},
-            ]
-        )
-
-        try:
-            response = infer_turn(
-                model=model,
-                processor=processor,
-                messages=[{"role": "user", "content": user_content}],
-                max_new_tokens=args.max_new_tokens,
-                enable_thinking=args.enable_thinking,
-                do_sample=args.do_sample,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
-            )
-        except Exception as exc:
-            response = f"[ERROR] {exc}"
-            print(f"  [WARN] Error: {exc}", flush=True)
-
-        results.append(
-            {
-                "record_index": item["record_index"],
-                "record_id": item["record_id"],
-                "source_video_path": item["source_video_path"],
-                "rewritten_video_path": item["rewritten_video_path"],
-                "video_path": item["video_path"],
-                "participant_image_path": item["participant_image_path"],
-                "speaker_ids": item["speaker_ids"],
-                "participant_speaker_id": item["participant_speaker_id"],
-                "conversation_floor_speaker_ids": item["conversation_floor_speaker_ids"],
-                "source_audio_paths": item["source_audio_paths"],
-                "rewritten_audio_paths": item["rewritten_audio_paths"],
-                "audio_paths": item["audio_paths"],
-                "participant_audio_path": item["participant_audio_path"],
-                "conversation_floor_audio_paths": item["conversation_floor_audio_paths"],
-                "aggregated_conversation_floor_audio_path": (
-                    item["aggregated_conversation_floor_audio_path"]
-                ),
-                "audio_warnings": item["audio_warnings"],
-                "system": system_prompt,
-                "user": item["user_prompt"],
-                "assistant": response,
-            }
-        )
-
-    error_count = sum(1 for item in results if str(item["assistant"]).startswith("[ERROR]"))
-    summary = {
-        "input_json": str(input_json_path),
-        "prompt_config": str(prompt_config_path),
-        "record_count": len(all_records),
-        "selected_record_count": len(selected_records),
-        "start_index": args.start_index,
-        "end_index": end_index,
-        "retained_count": len(kept_records),
-        "skipped_count": len(skipped_records),
-        "processed_count": len(results),
-        "error_count": error_count,
-        "no_audio": args.no_audio,
-        "max_video_frames": args.max_video_frames,
-        "aggregated_audio_dir": None if args.no_audio else str(aggregated_audio_dir),
-        "skip_reasons": dict(sorted(skip_counter.items())),
-    }
-
-    output_payload = {
-        "__summary__": summary,
-        "__skipped__": skipped_records,
-        "results": results,
-    }
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(output_payload, indent=2, ensure_ascii=False),
-        encoding="utf-8",
+    summary = engine.build_summary(
+        args=args,
+        backend=args.backend,
+        model_config=model_config,
+        input_json_path=input_json_path,
+        prompt_config_path=prompt_config_path,
+        record_count=len(all_records),
+        selected_record_count=len(selected_records),
+        end_index=end_index,
+        prepared=prepared,
+        results=results,
+        aggregated_audio_dir=aggregated_audio_dir,
     )
-    print(f"[INFO] Results saved to {output_path}")
+    engine.write_results(
+        output_path,
+        summary=summary,
+        prepared=prepared,
+        results=results,
+    )

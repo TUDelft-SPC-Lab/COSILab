@@ -1,0 +1,111 @@
+{
+  "_comment": [
+    "Model and decoding parameters for the intention task. THIS FILE IS THE SOURCE OF",
+    "TRUTH: cli.py has no --model / --max-new-tokens / --temperature / --top-p /",
+    "--top-k / --do-sample / --enable-thinking / --max-video-frames flags any more, so",
+    "change a run by editing here and resubmitting. A run's settings are then something",
+    "that can be read, diffed and committed rather than reconstructed from an sbatch",
+    "line, and they are recorded into every result file's __summary__.",
+    "",
+    "It is task-scoped on purpose. Another task wanting a different frame budget or",
+    "token cap gets its own model_config.json beside its own prompt config rather than",
+    "editing this one; models/config.py reads whichever file the task hands it.",
+    "",
+    "'defaults' applies to every backend; a backend's 'generation' overrides it. Backend",
+    "names must match models/registry.py BACKEND_MODULES. Any key starting with _ is a",
+    "comment, and an unknown key is a hard error rather than a shrug -- a mistyped",
+    "'temprature' that was silently ignored is the worst thing that can happen here,",
+    "because the run looks configured and is not.",
+    "",
+    "  model_id   weights path or hub id, and the ONLY place it is set. No model tensors",
+    "             live in this repo; this is where the provided path goes. The two",
+    "             /REPLACE_ME/... values below are placeholders and will fail the",
+    "             startup check by design -- an absolute path that is not a directory",
+    "             is refused before the manifest is even read. Keep replacements",
+    "             absolute: a relative value is treated as a hub id and skips that",
+    "             check entirely.",
+    "             null falls back to the backend module's own DEFAULT_MODEL_PATH.",
+    "  load       keyword arguments handed to the backend's constructor.",
+    "  generation decoding overrides on top of 'defaults'.",
+    "  extra      backend-only knobs; setting one a backend does not support is refused",
+    "             up front, which is what --enable-thinking used to check by hand.",
+    "",
+    "FRAME SAMPLING is one policy for every backend, in 'defaults' below:",
+    "",
+    "  video_fps         target rate. 2.0 is Qwen's own upstream default, so an",
+    "                    unconfigured run samples what that backend would have chosen.",
+    "  min_video_frames  floor. 4 is Qwen's FPS_MIN_FRAMES; short clips land here.",
+    "  max_video_frames  ceiling, and the guard against a long clip blowing up memory.",
+    "",
+    "models/media_io.py frames_at_fps resolves them once -- n = duration * fps, clamped,",
+    "rounded down to even -- and every backend is handed that exact count. Frame count is",
+    "the largest controllable confound when two models are compared, so it is decided",
+    "here rather than by each package's own constants."
+  ],
+
+  "defaults": {
+    "max_new_tokens": 512,
+    "do_sample": false,
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 64,
+    "video_fps": 2.0,
+    "min_video_frames": 4,
+    "max_video_frames": 32
+  },
+
+  "backends": {
+    "gemma": {
+      "_comment": [
+        "temperature/top_p/top_k only take effect when do_sample is true.",
+        "",
+        "enable_thinking is Gemma's reasoning mode, and the capability check refuses it",
+        "on a backend that does not advertise 'thinking' -- so moving this line to the",
+        "qwen7b section below fails at startup rather than being dropped on the floor."
+      ],
+      "model_id": "/REPLACE_ME/models/GemmaE4B",
+      "load": {
+        "device_map": "auto",
+        "dtype": "auto"
+      },
+      "generation": {},
+      "extra": {
+        "enable_thinking": false
+      }
+    },
+
+    "qwen7b": {
+      "_comment": [
+        "use_audio_in_video would additionally feed the video's own audio track; this",
+        "task already supplies audio as separate WAV parts (the participant's own track",
+        "and the conversation-floor mix), so it is off.",
+        "disable_talker drops the speech tower, which this task never uses.",
+        "",
+        "attn_implementation is sdpa, and leaving it unset is NOT the same as eager:",
+        "unset means whatever transformers decides, and on the 4.52 in the qwen image",
+        "that was eager for every tower even though the top-level config reported sdpa.",
+        "Eager materialises a full N-by-N attention matrix per layer, and the vision",
+        "tower attends over patches -- four per visual token -- so its matrix is sixteen",
+        "times the one the token count suggests. A measured run asked for a single",
+        "31.64 GiB tensor and died on a 96 GB card.",
+        "",
+        "flash_attention_2 is NOT the one to reach for: the RTX PRO 6000 is Blackwell",
+        "(compute 12.x) and upstream flash-attn targets older architectures.",
+        "",
+        "After changing this, check the job log's '[INFO] Qwen attention (requested ...)'",
+        "line: a request the model class does not implement leaves the towers on eager",
+        "without raising."
+      ],
+      "model_id": "/REPLACE_ME/models/Qwen2.5-Omni-7B",
+      "load": {
+        "device_map": "auto",
+        "dtype": "bfloat16",
+        "attn_implementation": "sdpa",
+        "disable_talker": true,
+        "use_audio_in_video": false
+      },
+      "generation": {},
+      "extra": {}
+    }
+  }
+}
