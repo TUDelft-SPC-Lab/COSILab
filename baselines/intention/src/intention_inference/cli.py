@@ -1,15 +1,16 @@
 """Command line and order of operations for intention inference.
 
-This module owns the task, not the model: manifest loading, path resolution,
-record filtering, prompt rendering and result writing. The model is reached only
-through the backend API in ``models/`` (see ``models.base.BaseMultimodalModel``),
-so the same task runs on any backend the registry knows about -- ``--backend``
-picks it, and ``model_config.json`` says which weights it loads with what
-decoding parameters.
+This module owns neither of the two things that vary. Which model answers is
+``--backend`` and the backend API in ``models/`` (see
+``models.base.BaseMultimodalModel``), with ``model_config.json`` saying which
+weights it loads under what decoding parameters. What is asked, and how the
+question is grounded, is ``--mode`` and the task modes in ``modes/`` (see
+``modes.base.BaseTaskMode``), each of which ships its own prompt config. The two
+are independent: any mode runs on any backend.
 
-The work itself is in ``engine.py``. What is left here is the argument surface
-and the sequence, which is chosen so that anything cheap that can fail does so
-before the weights are paid for.
+What is left here is manifest loading, path resolution and the sequence -- which
+is chosen so that anything cheap that can fail does so before the weights are
+paid for. The work itself is in ``engine.py``.
 """
 
 from __future__ import annotations
@@ -22,11 +23,13 @@ from models.registry import available_backends, backend_capabilities, load_model
 
 from . import engine
 from .manifest import load_manifest_records
+from .modes.registry import available_modes, load_mode
 from .prompt import load_prompt_config
+from .records import RecordContext
 
-DEFAULT_PROMPT_CONFIG_PATH = Path(__file__).resolve().with_name("prompt_ingroup.json")
-# This task's own weights, decoding parameters and frame policy. It sits beside
-# the prompt config because those numbers are a property of what is being asked.
+# This task's own weights, decoding parameters and frame policy. There is no
+# matching prompt-config constant: that one belongs to the mode, since which
+# question is asked is exactly what a mode is.
 DEFAULT_MODEL_CONFIG_PATH = Path(__file__).resolve().with_name("model_config.json")
 DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
     "/tudelft.net/staff-umbrella/neon/B1_pipeline/participant_imgs"
@@ -48,6 +51,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--mode",
+        required=True,
+        choices=available_modes(),
+        help=(
+            "Task mode: which variant of the question is asked, and what grounds it. "
+            "Required for the same reason as --backend -- it decides what was asked and "
+            "where the results are filed, so it should never be settled by omission."
+        ),
+    )
+    parser.add_argument(
         "--input-json",
         type=Path,
         required=True,
@@ -59,14 +72,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Path to the output JSON file. Defaults to "
-            "ingroup_results/<backend>/<input stem>.json beside the working directory."
+            "ingroup_results/<backend>/<mode>/<input stem>.json beside the working directory."
         ),
     )
     parser.add_argument(
         "--prompt-config",
         type=Path,
-        default=DEFAULT_PROMPT_CONFIG_PATH,
-        help="Prompt config JSON. Defaults to prompt_ingroup.json alongside this package.",
+        default=None,
+        help="Prompt config JSON. Defaults to the one the chosen --mode ships with.",
     )
     parser.add_argument(
         "--model-config",
@@ -128,7 +141,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PARTICIPANT_IMAGE_ROOT,
         help=(
             "Folder containing participant_<n>.png files used to identify the "
-            "indicated participant."
+            "indicated participant. Used by the participant_image mode."
         ),
     )
     parser.add_argument(
@@ -183,14 +196,16 @@ def parse_args() -> argparse.Namespace:
 def default_output_path(args: argparse.Namespace, input_json_path: Path) -> Path:
     """Where results land when --output is not given.
 
-    The backend is a directory component: two backends run over the same manifest
-    produce the same file name, and without this the second would silently
-    overwrite the first.
+    Backend and mode are both directory components, for one reason: two runs that
+    differ only in which model answered, or only in what was asked, produce the
+    same file name, and without this the second would silently overwrite the
+    first. Mode sits inside backend so the existing <backend>/ level keeps the
+    meaning it already has.
     """
     stem = input_json_path.stem
     if args.start_index or args.end_index is not None:
         stem = f"{stem}_{args.start_index}-{args.end_index}"
-    return Path("ingroup_results") / args.backend / f"{stem}.json"
+    return Path("ingroup_results") / args.backend / args.mode / f"{stem}.json"
 
 
 def resolve_optional_path(value: Path | None) -> Path | None:
@@ -200,7 +215,12 @@ def resolve_optional_path(value: Path | None) -> Path | None:
 def main() -> None:
     args = parse_args()
 
-    # Resolved and checked first, before anything is loaded or prepared: a
+    # First, before any file is opened: an unfinished mode refuses here, so it
+    # costs a second rather than a queued job that dies after loading weights.
+    # It also decides the prompt config below.
+    mode = load_mode(args.mode)
+
+    # Resolved and checked next, before anything is loaded or prepared: a
     # parameter the backend cannot honour is refused rather than silently
     # dropped, because a run that quietly ignored one is indistinguishable
     # afterwards from a run that never asked for it.
@@ -238,7 +258,9 @@ def main() -> None:
         )
 
     input_json_path = args.input_json.expanduser().resolve()
-    prompt_config_path = args.prompt_config.expanduser().resolve()
+    prompt_config_path = (
+        mode.prompt_config_path if args.prompt_config is None else args.prompt_config
+    ).expanduser().resolve()
     output_path = (
         default_output_path(args, input_json_path)
         if args.output is None
@@ -275,6 +297,7 @@ def main() -> None:
         f"{args.start_index}-{end_index} ({len(selected_records)} record(s))"
     )
     print(f"[INFO] Backend: {args.backend}")
+    print(f"[INFO] Mode: {mode.name}")
     print(f"[INFO] Model config: {model_config_path}")
     print(f"[INFO] Prompt config: {prompt_config_path}")
     print(f"[INFO] Output: {output_path}")
@@ -292,17 +315,28 @@ def main() -> None:
     )
 
     aggregated_audio_dir = output_path.parent / "_audio_mixes" / output_path.stem
-    prepared = engine.prepare_records(
-        args=args,
-        selected_records=selected_records,
+    ctx = RecordContext(
+        id_key=args.id_key,
         manifest_dir=input_json_path.parent,
         media_root=media_root,
+        media_path_prefix=args.media_path_prefix,
         local_path_prefix=local_path_prefix,
+        video_media_path_prefix=args.video_media_path_prefix,
         video_local_path_prefix=video_local_path_prefix,
+        audio_media_path_prefix=args.audio_media_path_prefix,
         audio_local_path_prefix=audio_local_path_prefix,
         participant_image_root=participant_image_root,
+        no_audio=args.no_audio,
         aggregated_audio_dir=aggregated_audio_dir,
+        exclude_video_substrings=args.exclude_video_substring,
+        exclude_audio_substrings=args.exclude_audio_substring,
         user_prompt_template=prompt_config["user_prompt_template"],
+    )
+    prepared = engine.prepare_records(
+        mode=mode,
+        ctx=ctx,
+        selected_records=selected_records,
+        limit=args.limit,
     )
     if not prepared.kept:
         print("[WARN] Nothing to process. Exiting.")
@@ -314,6 +348,7 @@ def main() -> None:
 
     results = engine.run_inference_pass(
         prepared=prepared,
+        mode=mode,
         system_prompt=system_prompt,
         no_audio=args.no_audio,
         model=model,
@@ -323,6 +358,7 @@ def main() -> None:
     summary = engine.build_summary(
         args=args,
         backend=args.backend,
+        mode=mode.name,
         model_config=model_config,
         input_json_path=input_json_path,
         prompt_config_path=prompt_config_path,

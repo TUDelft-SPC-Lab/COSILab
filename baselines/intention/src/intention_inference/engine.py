@@ -5,10 +5,12 @@ of operations. The order matters more than it looks: preparing records is cheap
 and fails for boring reasons -- a manifest path that does not resolve, a clip
 that is not on this share -- so it all happens before the weights are loaded.
 
-The model is reached only through ``models.base.BaseMultimodalModel``. Nothing
-here imports torch or transformers, and nothing here knows which backend is
-running: a turn is a list of :class:`~models.base.MediaPart` values, and what
-becomes of them is the backend's business.
+Neither of the two things that vary is decided here. The model is reached only
+through ``models.base.BaseMultimodalModel``, and what is asked of it only through
+``modes.base.BaseTaskMode``: this module drives the loop, counts what was
+skipped, and writes the answers down. A turn is a list of
+:class:`~models.base.MediaPart` values built by the mode, and what becomes of
+them is the backend's business.
 """
 
 from __future__ import annotations
@@ -19,11 +21,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from models.base import ChatMessage, MediaPart, combine_system_and_user_prompt
 from models.config import ModelRunConfig, describe_model_config
 
 from .manifest import get_nested_value
-from .records import prepare_record
+from .records import RecordContext
 
 __all__ = [
     "PreparedRecords",
@@ -45,16 +46,10 @@ class PreparedRecords:
 
 def prepare_records(
     *,
-    args,
+    mode,
+    ctx: RecordContext,
     selected_records: list[tuple[int, dict[str, Any]]],
-    manifest_dir: Path,
-    media_root: Path | None,
-    local_path_prefix: Path | None,
-    video_local_path_prefix: Path | None,
-    audio_local_path_prefix: Path | None,
-    participant_image_root: Path,
-    aggregated_audio_dir: Path,
-    user_prompt_template: str,
+    limit: int | None,
 ) -> PreparedRecords:
     """Resolve every selected record to media that exists on this filesystem.
 
@@ -67,24 +62,15 @@ def prepare_records(
     prepared = PreparedRecords()
 
     for record_index, record in selected_records:
-        record_result, skip_reason = prepare_record(
-            record=record,
+        record_id = get_nested_value(record, ctx.id_key)
+        if record_id is None:
+            record_id = record.get("id", record_index)
+
+        record_result, skip_reason = mode.prepare_record(
+            record,
             record_index=record_index,
-            id_key=args.id_key,
-            manifest_dir=manifest_dir,
-            media_root=media_root,
-            media_path_prefix=args.media_path_prefix,
-            local_path_prefix=local_path_prefix,
-            video_media_path_prefix=args.video_media_path_prefix,
-            video_local_path_prefix=video_local_path_prefix,
-            audio_media_path_prefix=args.audio_media_path_prefix,
-            audio_local_path_prefix=audio_local_path_prefix,
-            participant_image_root=participant_image_root,
-            no_audio=args.no_audio,
-            aggregated_audio_dir=aggregated_audio_dir,
-            exclude_video_substrings=args.exclude_video_substring,
-            exclude_audio_substrings=args.exclude_audio_substring,
-            user_prompt_template=user_prompt_template,
+            record_id=record_id,
+            ctx=ctx,
         )
         if record_result is None:
             skip_reason = skip_reason or "filtered_out"
@@ -92,14 +78,14 @@ def prepare_records(
             prepared.skipped.append(
                 {
                     "record_index": record_index,
-                    "record_id": str(get_nested_value(record, args.id_key) or record_index),
+                    "record_id": str(record_id),
                     "skip_reason": skip_reason,
                 }
             )
             continue
 
         prepared.kept.append(record_result)
-        if args.limit is not None and len(prepared.kept) >= args.limit:
+        if limit is not None and len(prepared.kept) >= limit:
             break
 
     print(
@@ -112,47 +98,10 @@ def prepare_records(
     return prepared
 
 
-def build_turn(
-    item: dict[str, Any],
-    *,
-    system_prompt: str,
-    no_audio: bool,
-    model,
-    model_config: ModelRunConfig,
-) -> ChatMessage:
-    """One user turn: who to look at, what was said, the clip, the question.
-
-    The order is the order the model sees the placeholders in, so it is part of
-    the prompt rather than a detail of how the list was built.
-    """
-    content: list[MediaPart] = [MediaPart.image(item["participant_image_path"])]
-    if not no_audio:
-        content.extend(MediaPart.audio(path) for path in item["audio_paths"])
-    content.append(
-        # The frame-sampling policy belongs to the run, not the backend: passing
-        # all three values means gemma and qwen7b see the same frames of the same
-        # clip, and a difference between them is the model.
-        model.prepare_video_part(
-            item["video_path"],
-            model_config.max_video_frames,
-            fps=model_config.video_fps,
-            min_frames=model_config.min_video_frames,
-        )
-    )
-    content.append(
-        MediaPart.text_part(
-            combine_system_and_user_prompt(
-                system_prompt=system_prompt,
-                user_prompt=item["user_prompt"],
-            )
-        )
-    )
-    return ChatMessage("user", content)
-
-
 def run_inference_pass(
     *,
     prepared: PreparedRecords,
+    mode,
     system_prompt: str,
     no_audio: bool,
     model,
@@ -169,7 +118,7 @@ def run_inference_pass(
             flush=True,
         )
         try:
-            turn = build_turn(
+            turn = mode.build_turn(
                 item,
                 system_prompt=system_prompt,
                 no_audio=no_audio,
@@ -191,7 +140,9 @@ def run_inference_pass(
                 "source_video_path": item["source_video_path"],
                 "rewritten_video_path": item["rewritten_video_path"],
                 "video_path": item["video_path"],
-                "participant_image_path": item["participant_image_path"],
+                # Whatever grounded the question is the mode's to report: an ids
+                # mode may have no participant image to name here.
+                **mode.result_fields(item),
                 "speaker_ids": item["speaker_ids"],
                 "participant_speaker_id": item["participant_speaker_id"],
                 "conversation_floor_speaker_ids": item["conversation_floor_speaker_ids"],
@@ -217,6 +168,7 @@ def build_summary(
     *,
     args,
     backend: str,
+    mode: str,
     model_config: ModelRunConfig,
     input_json_path: Path,
     prompt_config_path: Path,
@@ -238,6 +190,7 @@ def build_summary(
         "input_json": str(input_json_path),
         "prompt_config": str(prompt_config_path),
         "backend": backend,
+        "mode": mode,
         "record_count": record_count,
         "selected_record_count": selected_record_count,
         "start_index": args.start_index,

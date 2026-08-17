@@ -2,8 +2,8 @@
 
 Backend modules are resolved lazily, by import path, and only when one is
 actually requested. That is what keeps a task's non-inference entrypoints --
-notably ``tasks/intention_narrative/build_assignment.py`` -- runnable with the
-standard library alone: importing this module must never drag in torch.
+runnable with the standard library alone: importing this module must never drag
+in torch.
 """
 
 from __future__ import annotations

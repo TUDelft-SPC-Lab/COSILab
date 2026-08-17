@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "PLACEHOLDER. This file is not a working prompt: the participant_ids mode",
+    "raises before it is ever read (see modes/participant_ids.py). It exists so the",
+    "mode's prompt_config_path points somewhere real, and so whoever finishes the",
+    "mode has the shape in front of them.",
+    "",
+    "The loader (prompt.py load_prompt_config) wants 'system_prompt' plus",
+    "'user_prompt_template'. If the template is absent it assembles one from",
+    "'intro' / 'questions' / 'examples' instead -- see the participant_image config",
+    "beside this file for a worked example of both halves.",
+    "",
+    "Templates are rendered against the record's flattened fields, so {participant}",
+    "and {conversation_floor} already resolve to the ids without any code change;",
+    "{record_json} is the whole record, and an unknown placeholder is left as-is.",
+    "",
+    "TODO: write a template that names people by id and says what carries those ids",
+    "visually. Two things to settle while writing it:",
+    "  - Whether the floor speakers are named individually. They arrive as ONE mixed",
+    "    soundtrack, so naming them implies the mix is no longer anonymous and the",
+    "    prompt has to say what the listener can and cannot separate.",
+    "  - Where the media placeholders actually land. The participant_image prompt",
+    "    writes '<image>' / '<audio1>' / '<audio2>' as literal text while the real",
+    "    tokens are emitted at the parts' positions, ahead of the text block, so",
+    "    those markers resolve to nothing. Either interleave text between the parts",
+    "    in build_turn(), or describe them strictly by order."
+  ],
+
+  "system_prompt": "You are a helpful multimodal assistant.",
+
+  "user_prompt_template": "TODO: unwritten. The participant_ids mode is a placeholder; see modes/participant_ids.py."
+}

@@ -14,12 +14,13 @@
 #
 # Which model runs is --backend; lib/model_backends.sh maps that name to a
 # container image, and the task's model_config.json says which weights load
-# inside it.
+# inside it. What is asked of it is --mode, which this script only forwards:
+# the modes and their prompts live in intention_inference/modes/.
 #
 # Submit through the stub, for example:
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --index-range 0-250
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --no-audio --limit 20
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode participant_image --index-range 0-250
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image --no-audio --limit 20
 
 set -euo pipefail
 
@@ -54,6 +55,11 @@ source "${PROJECT_ROOT}/${PACKAGE_SUBDIR}/job_scripts/lib/model_backends.sh"
 # thing anyone asks of it, and it is also a path component, so letting it be
 # decided by omission is how a run ends up filed under a model nobody chose.
 backend=""
+# No default either, for the same reason: --mode is what was asked, and it is a
+# path component too. Unlike the backend, this script never needs to know which
+# modes exist -- it picks no image from it -- so the list of valid names lives
+# only in intention_inference/modes/registry.py and cli.py rejects a bad one.
+mode=""
 # Empty means "the image the backend declares"; --sif-path overrides it for a
 # rebuilt image. There is no weights override: which weights run is
 # backends.<name>.model_id in the task's model_config.json.
@@ -64,8 +70,9 @@ input_json="${INTENTION_INPUT_JSON}"
 output_dir="${INTENTION_OUTPUT_DIR}"
 output_json=""
 participant_image_root="${INTENTION_PARTICIPANT_IMAGE_ROOT}"
-# Empty means "use the config shipped inside the intention_inference package";
-# resolved after argument parsing because both follow PROJECT_ROOT.
+# Empty prompt_config means "whichever one the mode ships with", and is simply
+# not passed on. Empty model_config means the one inside the package, resolved
+# after argument parsing because it follows PROJECT_ROOT.
 prompt_config=""
 model_config=""
 no_audio=0
@@ -76,15 +83,18 @@ end_index=""
 
 usage() {
     echo "Usage:" >&2
-    echo "  sbatch $0 --backend <name> [options]" >&2
+    echo "  sbatch $0 --backend <name> --mode <name> [options]" >&2
     echo "Options:" >&2
     echo "  --backend NAME                             Model to run the task on. Required." >&2
     echo "                                             Known: $(intention_known_backends | tr '\n' ' ')" >&2
+    echo "  --mode NAME                                Task mode: what is asked. Required." >&2
+    echo "                                             Names live in modes/registry.py; run with" >&2
+    echo "                                             a wrong one to be shown the list." >&2
     echo "  --input-json PATH                          Default: ${input_json}" >&2
     echo "  --output PATH                              Exact output JSON file path" >&2
     echo "  --output-dir PATH                          Default: ${output_dir}" >&2
-    echo "                                             Results land in <output-dir>/<backend>/" >&2
-    echo "  --prompt-config PATH                       Default: packaged prompt_ingroup.json" >&2
+    echo "                                             Results land in <output-dir>/<backend>/<mode>/" >&2
+    echo "  --prompt-config PATH                       Default: the one the mode ships with" >&2
     echo "  --model-config PATH                        Default: packaged model_config.json" >&2
     echo "                                             Weights, token budget, sampling and the" >&2
     echo "                                             frame policy live in that file, not here." >&2
@@ -100,6 +110,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --backend)
             backend="${2:?Missing value for --backend}"
+            shift 2
+            ;;
+        --mode)
+            mode="${2:?Missing value for --mode}"
             shift 2
             ;;
         --input-json)
@@ -193,6 +207,12 @@ if [[ -z "${backend}" ]]; then
     exit 1
 fi
 
+if [[ -z "${mode}" ]]; then
+    usage
+    echo "[ERROR] --mode is required." >&2
+    exit 1
+fi
+
 if ! intention_backend_is_known "${backend}"; then
     echo "[ERROR] Unknown backend: ${backend}" >&2
     echo "        Known: $(intention_known_backends | tr '\n' ' ')" >&2
@@ -237,14 +257,14 @@ intention_set_local_prefixes "${DATA_ROOT}"
 VIDEO_LOCAL_PATH_PREFIX="${INTENTION_VIDEO_LOCAL_PATH_PREFIX}"
 AUDIO_LOCAL_PATH_PREFIX="${INTENTION_AUDIO_LOCAL_PATH_PREFIX}"
 
-backend_output_dir="$(intention_output_dir "${output_dir}" "${backend}")"
+run_output_dir="$(intention_output_dir "${output_dir}" "${backend}" "${mode}")"
 if [[ -z "${output_json}" ]]; then
     input_stem="$(basename "${input_json}")"
     input_stem="${input_stem%.json}"
     if [[ -n "${index_range}" ]]; then
         input_stem="${input_stem}_${start_index}-${end_index}"
     fi
-    output_json="${backend_output_dir}/${input_stem}.json"
+    output_json="${run_output_dir}/${input_stem}.json"
 fi
 
 if [[ "${output_json}" != /* ]]; then
@@ -254,9 +274,9 @@ fi
 SRC_DIR="${PROJECT_ROOT}/${PACKAGE_SUBDIR}/src"
 CONTAINER_SRC_DIR="${CONTAINER_PROJECT_ROOT}/${PACKAGE_SUBDIR}/src"
 
-if [[ -z "${prompt_config}" ]]; then
-    prompt_config="${SRC_DIR}/intention_inference/prompt_ingroup.json"
-fi
+# Deliberately no default: each mode ships its own prompt config, so empty means
+# "let the mode decide" and --prompt-config is simply not passed. That is what
+# keeps this script from having to learn where any particular mode's JSON lives.
 if [[ -z "${model_config}" ]]; then
     model_config="${SRC_DIR}/intention_inference/model_config.json"
 fi
@@ -271,7 +291,10 @@ container_path() {
         printf '%s\n' "${host_path}"
     fi
 }
-container_prompt_config="$(container_path "${prompt_config}")"
+container_prompt_config=""
+if [[ -n "${prompt_config}" ]]; then
+    container_prompt_config="$(container_path "${prompt_config}")"
+fi
 container_model_config="$(container_path "${model_config}")"
 
 # ---------------------------------------------------------------------------
@@ -296,7 +319,12 @@ if [[ ! -f "${SRC_DIR}/models/registry.py" ]]; then
     exit 1
 fi
 
+# prompt_config is skipped when empty: that is the "mode decides" case, and only
+# cli.py knows where the mode's own file is.
 for required_file in "${prompt_config}" "${model_config}" "${input_json}"; do
+    if [[ -z "${required_file}" ]]; then
+        continue
+    fi
     if [[ ! -f "${required_file}" ]]; then
         echo "[ERROR] Not found: ${required_file}" >&2
         exit 1
@@ -338,15 +366,16 @@ echo "[INFO] container_project_root    = ${CONTAINER_PROJECT_ROOT}"
 echo "[INFO] src_dir                   = ${SRC_DIR}"
 echo "[INFO] container_src_dir         = ${CONTAINER_SRC_DIR}"
 echo "[INFO] backend                   = ${backend}"
+echo "[INFO] mode                      = ${mode}"
 echo "[INFO] sif_path                  = ${SIF_PATH}"
 echo "[INFO] model_path                = <backends.${backend}.model_id in the model config>"
 echo "[INFO] model_config              = ${model_config}"
 echo "[INFO] container_model_config    = ${container_model_config}"
-echo "[INFO] prompt_config             = ${prompt_config}"
-echo "[INFO] container_prompt_config   = ${container_prompt_config}"
+echo "[INFO] prompt_config             = ${prompt_config:-<packaged with mode ${mode}>}"
+echo "[INFO] container_prompt_config   = ${container_prompt_config:-<not passed>}"
 echo "[INFO] data_root                 = ${DATA_ROOT}"
 echo "[INFO] input_json                = ${input_json}"
-echo "[INFO] output_dir                = ${backend_output_dir}"
+echo "[INFO] output_dir                = ${run_output_dir}"
 echo "[INFO] output_json               = ${output_json}"
 echo "[INFO] participant_image_root    = ${participant_image_root}"
 echo "[INFO] no_audio                  = ${no_audio}"
@@ -362,9 +391,9 @@ echo "[INFO] audio_local_path_prefix   = ${AUDIO_LOCAL_PATH_PREFIX}"
 python_args=(
     python -m intention_inference
     --backend "${backend}"
+    --mode "${mode}"
     --input-json "${input_json}"
     --output "${output_json}"
-    --prompt-config "${container_prompt_config}"
     --model-config "${container_model_config}"
     --participant-image-root "${participant_image_root}"
     --video-media-path-prefix "${INTENTION_VIDEO_MEDIA_PATH_PREFIX}"
@@ -373,6 +402,11 @@ python_args=(
     --audio-local-path-prefix "${AUDIO_LOCAL_PATH_PREFIX}"
 )
 
+# Omitted rather than passed empty when unset: an empty --prompt-config would be
+# accepted by argparse and then resolve to the working directory.
+if [[ -n "${container_prompt_config}" ]]; then
+    python_args+=(--prompt-config "${container_prompt_config}")
+fi
 if [[ "${no_audio}" == "1" ]]; then
     python_args+=(--no-audio)
 fi

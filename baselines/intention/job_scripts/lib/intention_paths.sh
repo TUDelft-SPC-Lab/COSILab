@@ -35,15 +35,17 @@ intention_set_local_prefixes() {
 }
 intention_set_local_prefixes
 
-# intention_output_dir <output_dir> <backend>
+# intention_output_dir <output_dir> <backend> <mode>
 #
-# Results are filed per backend. Two backends run over the same manifest produce
-# the same file name, so without this the second silently overwrites the first.
+# Results are filed per backend and then per mode. Two runs differing only in
+# which model answered, or only in what was asked, produce the same file name, so
+# without this the second silently overwrites the first.
 #
-# NOTE: this is one level deeper than the old flat tree. Runs made before the
-# backend split still sit directly in ${INTENTION_OUTPUT_DIR}; nothing was moved,
-# but a notebook globbing model_responses/*.json will not see new runs until its
-# pattern is updated.
+# NOTE: this is two levels deeper than the old flat tree. Runs made before the
+# backend split still sit directly in ${INTENTION_OUTPUT_DIR}, and runs made
+# between the backend split and the mode split sit one level in; nothing was
+# moved, but a notebook globbing model_responses/*.json will not see new runs
+# until its pattern is updated.
 intention_output_dir() {
-    printf '%s\n' "$1/$2"
+    printf '%s\n' "$1/$2/$3"
 }

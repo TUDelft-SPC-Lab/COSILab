@@ -12,9 +12,10 @@
 
 # Intention inference on the DAIC environment.
 #
-# Which model runs is not fixed here: --backend picks it, and lib/model_backends.sh
-# maps that name to a container image. The SLURM header above sizes the job for a
-# local multimodal model on one GPU.
+# Neither what runs nor what is asked is fixed here: --backend picks the model,
+# and lib/model_backends.sh maps that name to a container image; --mode picks the
+# task variant. The SLURM header above sizes the job for a local multimodal model
+# on one GPU.
 #
 # This file is only the environment: the SLURM header above (which sbatch must
 # read literally, so it cannot be computed) plus the three host paths. All the
@@ -22,8 +23,8 @@
 #
 # Run `bash job_scripts/intention/cosilab_daic.sh --help` for the options.
 #
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma
-#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --index-range 0-250
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode participant_image
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode participant_image --index-range 0-250
 
 # Absolute host paths. These are NOT container paths: the source below runs on
 # the host, before apptainer is involved. PROJECT_ROOT is what gets bound to

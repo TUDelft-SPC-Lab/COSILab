@@ -4,10 +4,10 @@ The parameters that decide what a run *is* -- how many video frames the model
 sees, how many tokens it may generate, whether it samples -- live in a JSON file
 rather than in command-line flags, so a run's settings can be read, diffed and
 committed instead of being reconstructed from an sbatch line. The file belongs to
-the task, not to this module: each task keeps its own beside its prompt config
-(``tasks/intention_narrative/model_config.json`` for the intention-narrative
-task), because a frame budget is a property of what is being asked, and two tasks
-should not have to agree on one number.
+the task, not to this module: each task keeps its own beside its code
+(``intention_inference/model_config.json`` for the intention task), because a
+frame budget is a property of what is being asked, and two tasks should not have
+to agree on one number.
 
 Every such file has one ``defaults`` block and one section per backend::
 

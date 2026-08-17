@@ -41,7 +41,7 @@ Model baselines and downstream feature-generation code.
 
 - `conversation_group/SAM3`: SAM3/SAM-Body4D-based mask generation for INGroup video segments.
 - `conversation_group/ViTPose`: ViTPose finetuning, SAM3-bbox-based keypoint inference, and conversion of keypoint JSON to dataframe PKL.
-- `intention`: Gemma-based intention-recognition inference, pre-annotation survey analysis, and model-vs-human annotation similarity comparison.
+- `intention`: multimodal intention-recognition inference (backend- and mode-selectable), pre-annotation survey analysis, and model-vs-human annotation similarity comparison.
 - SAM3 details: [baselines/conversation_group/SAM3/README.md](baselines/conversation_group/SAM3/README.md)
 - ViTPose details: [baselines/conversation_group/ViTPose/README.md](baselines/conversation_group/ViTPose/README.md)
 - Intention details: [baselines/intention/README.md](baselines/intention/README.md)
