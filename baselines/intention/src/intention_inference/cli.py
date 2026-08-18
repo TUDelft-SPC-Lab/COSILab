@@ -32,7 +32,7 @@ from .records import RecordContext
 # question is asked is exactly what a mode is.
 DEFAULT_MODEL_CONFIG_PATH = Path(__file__).resolve().with_name("model_config.json")
 DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
-    "/tudelft.net/staff-umbrella/neon/B1_pipeline/participant_imgs"
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/participant_imgs"
 )
 
 
@@ -140,8 +140,8 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_PARTICIPANT_IMAGE_ROOT,
         help=(
-            "Folder containing participant_<n>.png files used to identify the "
-            "indicated participant. Used by the participant_image mode."
+            "Folder containing participant_<n>.png files. The pa mode reads one "
+            "of them; fa reads one per person in the group."
         ),
     )
     parser.add_argument(

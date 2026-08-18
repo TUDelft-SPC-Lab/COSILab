@@ -12,8 +12,9 @@
 # Everything here is under /tudelft.net, which is identical in both DAIC
 # environments, so nothing in this file is environment-specific.
 
-INTENTION_DATA_ROOT="/tudelft.net/staff-umbrella/neon/ingroup_dataset"
-INTENTION_PIPELINE_ROOT="/tudelft.net/staff-umbrella/neon/B1_pipeline"
+# Where the clip media lives. The two annotation_* folders below hang off it.
+INTENTION_DATA_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_1"
+INTENTION_PIPELINE_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline"
 
 INTENTION_VIDEO_MEDIA_PATH_PREFIX="https://covfee.ewi.tudelft.nl/P8wPkLamHiAMOvb29g9h3AFy8tXACT1e/video_segs"
 INTENTION_AUDIO_MEDIA_PATH_PREFIX="https://covfee.ewi.tudelft.nl/P8wPkLamHiAMOvb29g9h3AFy8tXACT1e/audio_segs_normalized"
@@ -28,10 +29,17 @@ INTENTION_HF_CACHE="/tudelft.net/staff-umbrella/neon/zonghuan/.cache/huggingface
 
 # The local media roots hang off the data root, which --data-root can override at
 # run time. Call this again after parsing arguments to pick up an override.
+#
+# Only the prefix is swapped: everything the manifest URL carries after the media
+# prefix -- the seg_* folder and the filename -- is joined on verbatim. That is
+# why the two trees may name their segment folders differently (video uses
+# seg_134500_134530, audio uses seg_13-45-00_13-45-30) without anything here
+# knowing about it: whichever form the manifest holds is the form that is looked
+# for on disk.
 intention_set_local_prefixes() {
     local data_root="${1:-${INTENTION_DATA_ROOT}}"
-    INTENTION_VIDEO_LOCAL_PATH_PREFIX="${data_root}/for_annotation/annotation_video"
-    INTENTION_AUDIO_LOCAL_PATH_PREFIX="${data_root}/for_annotation/annotation_audio"
+    INTENTION_VIDEO_LOCAL_PATH_PREFIX="${data_root}/annotation_video"
+    INTENTION_AUDIO_LOCAL_PATH_PREFIX="${data_root}/annotation_audio"
 }
 intention_set_local_prefixes
 

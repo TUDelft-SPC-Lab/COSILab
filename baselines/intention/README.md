@@ -259,9 +259,9 @@ Default DAIC paths (`lib/intention_paths.sh` and `lib/model_backends.sh`):
 
 ```text
 PROJECT_ROOT   /home/zli33/linuxhome/projects/COSILab
-DATA_ROOT      /tudelft.net/staff-umbrella/neon/ingroup_dataset
-input_json     /tudelft.net/staff-umbrella/neon/B1_pipeline/annotation_clips.json
-output_dir     /tudelft.net/staff-umbrella/neon/B1_pipeline/model_responses/<backend>/<mode>
+DATA_ROOT      /tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_1
+input_json     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/annotation_clips.json
+output_dir     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/model_responses/<backend>/<mode>
 gemma  SIF     /tudelft.net/staff-umbrella/neon/apptainer/gemma.sif
 qwen7b SIF     /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
 ```
