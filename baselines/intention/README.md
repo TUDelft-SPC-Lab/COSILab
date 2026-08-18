@@ -97,7 +97,7 @@ If `user_prompt_template` (or `prompt`) is absent, the loader assembles the temp
 
 Every mode's prompt asks the model to identify the indicated participant's intentions, including timestamps, confidence, reasoning, intensity, and counterfactual explanations. If no clear intention is visible, the model is instructed to return the no-intention format.
 
-FA's prompt config carries more than the two keys above: `preamble`, `audio_label`, `image_label` and `video_label` are the text parts it interleaves between its media. They live there rather than in Python so the exact wording of a run stays diffable. `load_prompt_config` passes through every key it does not itself normalise, and `BaseTaskMode.configure` hands the resolved config to the mode before any record is prepared.
+FA's prompt config carries more than the two keys above: its prompt is spread across a dozen text parts interleaved with the media, and each of those fragments is a key in the file. They live there rather than in Python so the exact wording of a run stays diffable. `load_prompt_config` passes through every key it does not itself normalise, and `BaseTaskMode.configure` hands the resolved config to the mode before any record is prepared. The fragments are listed under the three modes below.
 
 The model is reached only through `models/`: `--backend` names it, `models/registry.py` resolves the name to a class, and `model_config.json` says which weights it loads with what decoding parameters. Task code never imports torch.
 
@@ -125,7 +125,7 @@ The axis is how much of the group's audio is stacked, and therefore how much of 
 | --- | --- | --- | --- |
 | `sa` | 1 -- everyone stacked, participant included | one crop of the participant | **placeholder, raises** |
 | `pa` | 2 -- the participant, and everyone else stacked | one crop of the participant | runs; unchanged since before modes existed |
-| `fa` | N -- one per person, labelled | a photograph per person, labelled | runs |
+| `fa` | N -- one per person, each labelled with their id | a photograph per person, each labelled | runs |
 
 The turn layout belongs to the mode, because part order is the order the model meets the placeholders in. `pa` produces:
 
@@ -137,28 +137,40 @@ video: sampled video frames
 text:  system prompt + rendered user prompt
 ```
 
-`fa` produces, for a group of participants 1, 3 and 4:
+`fa` reads as one continuous instruction with media embedded in it. For a group of participants 1, 3 and 4 with 3 as the person of interest:
 
 ```text
-text:  preamble
-text:  "Audio of participant 1:"        audio: participant 1's track
-text:  "Audio of participant 3:"        audio: participant 3's track
-text:  "Audio of participant 4:"        audio: participant 4's track
-text:  "Photograph of participant 1:"   image: participant_1.png
-text:  "Photograph of participant 3:"   image: participant_3.png
-text:  "Photograph of participant 4:"   image: participant_4.png
-text:  "Video of the group:"            video: sampled video frames
-text:  system prompt + rendered user prompt   <- names the participant of interest
+text:  system prompt + "Watch the 30-second video clip... The following is a
+        video that shows the conversation from top view:"
+video: sampled video frames
+text:  "This is the participant that you would observe: participant 3, and
+        this is their audio in the conversation:"
+audio: participant 3's track
+text:  "This is an image of them:"
+image: participant_3.png
+text:  "These are all other participants that are within the same
+        conversation as participant 3:"
+text:  "[participant 1, audio:"    audio: 1's track
+text:  ", image:"                  image: participant_1.png
+text:  "],"
+text:  "[participant 4, audio:"    audio: 4's track
+text:  ", image:"                  image: participant_4.png
+text:  "],"
+text:  "You can use the gallery images to locate the participants in the
+        video. ... Identify the intentions of participant 3. ..."
 ```
 
-Two properties of that shape are load-bearing and easy to undo by accident:
+The person of interest is named up front, before anyone else is shown, and the others follow in ascending id order. The system prompt is folded into the opening text rather than the closing one, because this prompt opens by saying what the model is about to be shown.
 
-- **People are listed in ascending id order, never participant-first.** Withholding who the question is about until the last part only means anything if the ordering does not leak it.
-- **Ids are bound by interleaved text, not by position.** A text part naming the speaker precedes each media part, so the association holds regardless of how a backend lays out its placeholders. Both backends render text parts inline between media tokens, which is what makes this work.
+**Ids are bound by interleaved text, not by position.** A text fragment naming the speaker precedes each media part, so the association holds regardless of how a backend lays out its placeholders. Both backends render text parts inline between media tokens, which is what makes this work.
 
-`pa` does neither, and is kept that way deliberately. The `<image>`, `<audio1>` and `<audio2>` markers in its prompt are literal characters, not placeholders: the real media tokens are emitted at the parts' positions, all of them ahead of the text block, so those markers resolve to nothing and the binding rests on part order alone. Fixing it would make `pa` a different condition and break comparability with results already collected under it. `fa` does not repeat the mistake, and a new mode should not either.
+`pa` does not do that, and is kept that way deliberately. The `<image>`, `<audio1>` and `<audio2>` markers in its prompt are literal characters, not placeholders: the real media tokens are emitted at the parts' positions, all of them ahead of the text block, so those markers resolve to nothing and the binding rests on part order alone. Fixing it would make `pa` a different condition and break comparability with results already collected under it. `fa` does not repeat the mistake, and a new mode should not either.
 
-FA's user prompt gets `{participant}`, `{goa_ids}`, `{other_ids}` and `{goa_size}`. Note that `{conversation_floor}` does **not** render in any mode: it is a list, and the template flattener keeps only scalars -- which is why `fa.render_user_prompt` supplies the group as text itself.
+Every fragment above is a key in `prompt_fa.json` -- `video_intro`, `poa_audio_intro`, `poa_image_intro`, `others_intro`, `other_open`, `other_between`, `other_close`, plus `poa_intro_video_only` for `--no-audio` -- so the wording of a run stays diffable. Each takes `{participant}` (the person of interest) and `{speaker_id}` (whoever that fragment introduces); an unknown placeholder is left as itself rather than raising. `user_prompt_template` is the closing block and additionally gets `{goa_ids}`, `{other_ids}` and `{goa_size}`.
+
+`modes/fa.py` `_segments` is the single place the order is decided: both the turn and the prompt recorded in the result file are rendered from it, so they cannot drift apart. The recorded `user` field is the whole prose with each media part shown as a marker (`<video>`, `<audio 3>`, `<gallery_image 3>`), since recording only the last of a dozen text parts would record almost nothing.
+
+Note that `{conversation_floor}` does **not** render in any mode: it is a list, and the template flattener keeps only scalars -- which is why `fa` supplies the group as text itself.
 
 The aggregated conversation-floor mixes are written next to the output file, under:
 

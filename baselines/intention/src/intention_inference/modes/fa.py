@@ -1,25 +1,26 @@
 """FA -- flattened audio.
 
 Nothing is stacked. Every person in the group of analysis gets their own audio
-part and their own gallery image, each introduced by a text part naming their
-id, and only after all of that -- and the clip -- is the person of interest
-named and the question asked.
+part and their own gallery image, and every one of those parts is introduced by
+text naming whose it is.
 
-Two things about that shape are deliberate and easy to undo by accident:
+The turn reads as one continuous instruction with media embedded in it: the clip
+first, then the person of interest with their own voice and face, then each of
+the others as an ``[id, audio, image]`` group, then the question. The person of
+interest is named up front -- the model is told who to watch before it is shown
+anyone else -- and the gallery images are what let it find those people in the
+top-view video.
 
-* **The group is presented in ascending id order, not participant-first.** The
-  point of withholding the person of interest until the end is that the model
-  reads the group symmetrically; ordering the parts by who matters would give the
-  answer away before the question. ``records.resolve_per_speaker_audio`` sorts,
-  and this module iterates ``goa_speaker_ids`` as it comes.
-* **Ids are bound by interleaved text, not by position.** A text part naming the
-  speaker precedes each media part, so the association survives regardless of how
-  a backend lays out its placeholders. This is the thing PA gets wrong -- its
-  "<audio1>"/"<audio2>" markers are inert text sitting after every media token --
-  and the reason not to copy PA's prompt shape here.
+**Ids are bound by interleaved text, not by position.** A text fragment naming
+the speaker precedes each media part, so the association survives regardless of
+how a backend lays out its placeholders. This is the thing PA gets wrong -- its
+"<audio1>"/"<audio2>" markers are inert text sitting after every media token --
+and the reason not to copy PA's prompt shape here.
 
-The labels themselves live in the prompt config, not in this file, so the exact
-wording of a run stays diffable.
+Every fragment lives in the prompt config rather than in this file, so the exact
+wording of a run stays diffable, and ``_segments`` is the single place the order
+is decided: ``build_turn`` and the prompt recorded in the results are both
+rendered from it, so they cannot drift apart.
 """
 
 from __future__ import annotations
@@ -28,36 +29,54 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from models.base import ChatMessage, MediaPart
+from models.base import ChatMessage, MediaPart, combine_system_and_user_prompt
 
-from ..prompt import render_prompt
+from ..prompt import SafeFormatDict, render_prompt
 from ..records import RecordContext, resolve_per_speaker_audio, resolve_video_media
 from .base import BaseTaskMode
 
 __all__ = ["FlattenedAudioMode"]
 
-DEFAULT_PREAMBLE = (
-    "You will be shown, for each person in a conversation group, their own audio "
-    "and a photograph of them, each labelled with their participant number, "
-    "followed by a video of the group."
+DEFAULT_VIDEO_INTRO = (
+    "Watch the 30-second video clip and listen to the provided audio. "
+    "The following is a video that shows the conversation from top view:"
 )
-DEFAULT_AUDIO_LABEL = "Audio of participant {speaker_id}:"
-DEFAULT_IMAGE_LABEL = "Photograph of participant {speaker_id}:"
-DEFAULT_VIDEO_LABEL = "Video of the group:"
+DEFAULT_POA_AUDIO_INTRO = (
+    "This is the participant that you would observe: participant {participant}, "
+    "and this is their audio in the conversation:"
+)
+DEFAULT_POA_IMAGE_INTRO = "This is an image of them:"
+DEFAULT_POA_INTRO_VIDEO_ONLY = (
+    "This is the participant that you would observe: participant {participant}. "
+    "This is an image of them:"
+)
+DEFAULT_OTHERS_INTRO = (
+    "These are all other participants that are within the same conversation as "
+    "participant {participant}:"
+)
+DEFAULT_OTHER_OPEN = "[participant {speaker_id}, audio:"
+DEFAULT_OTHER_BETWEEN = ", image:"
+DEFAULT_OTHER_CLOSE = "],"
 
 
 class FlattenedAudioMode(BaseTaskMode):
     name = "fa"
     prompt_config_path = Path(__file__).resolve().with_name("prompt_fa.json")
 
-    def _label(self, key: str, default: str, **values: Any) -> str:
+    def _fragment(self, key: str, default: str, **values: Any) -> str:
+        """One text fragment from the prompt config.
+
+        Formatted the same forgiving way as the main template: an unknown
+        placeholder is left as itself rather than raising, so a fragment someone
+        edits mid-experiment cannot take down a queued job.
+        """
         template = self.prompt_config.get(key, default)
         if not isinstance(template, str):
             raise ValueError(
                 f"{self.prompt_config_path}: {key!r} must be a string, "
                 f"got {type(template).__name__}."
             )
-        return template.format(**values)
+        return template.format_map(SafeFormatDict(values))
 
     def resolve_reference_media(
         self,
@@ -93,6 +112,10 @@ class FlattenedAudioMode(BaseTaskMode):
 
         return (
             {
+                # Carried explicitly rather than read back off the audio fields,
+                # which are empty under --no-audio: who the question is about is
+                # not a property of whether audio was loaded.
+                "poa_id": participant,
                 "goa_image_ids": goa_ids,
                 "speaker_image_paths": image_paths,
                 "participant_image_path": image_paths[str(participant)],
@@ -133,10 +156,125 @@ class FlattenedAudioMode(BaseTaskMode):
             **audio_fields,
             "source_record": record,
         }
+        # The closing block is rendered first because the composed prompt embeds
+        # it, and the composed prompt is what the result file records.
+        item["closing_prompt"] = self._render_closing(
+            ctx.user_prompt_template, record, item
+        )
         item["user_prompt"] = self.render_user_prompt(
             ctx.user_prompt_template, record, item
         )
         return item, None
+
+    def _render_closing(
+        self,
+        template: str,
+        record: Mapping[str, Any],
+        item: Mapping[str, Any],
+    ) -> str:
+        """The final block, with the group ids the record does not carry as scalars.
+
+        ``conversation_floor`` is a list, and the flattener keeps only scalars,
+        so ``{conversation_floor}`` would otherwise render as itself.
+        """
+        goa_ids = item.get("goa_image_ids") or []
+        poa_id = item.get("poa_id")
+        other_ids = [i for i in goa_ids if i != poa_id]
+        extra = {
+            "goa_ids": ", ".join(str(i) for i in goa_ids),
+            "other_ids": ", ".join(str(i) for i in other_ids),
+            "goa_size": len(goa_ids),
+        }
+        return render_prompt(template, {**record, **extra})
+
+    def _segments(
+        self,
+        item: Mapping[str, Any],
+    ) -> list[tuple[str, Any, str | None]]:
+        """The turn as ordered ``(kind, value, marker)`` steps.
+
+        The single source of the order. ``build_turn`` turns these into media
+        parts and the recorded prompt turns them into text, so what a result file
+        says was asked is what was asked.
+
+        Whether audio is present is read off the item rather than passed in:
+        ``--no-audio`` leaves ``speaker_audio_paths`` empty, and deriving it here
+        means the two renderings cannot disagree about it.
+        """
+        poa_id = item["poa_id"]
+        audio_paths = item.get("speaker_audio_paths") or {}
+        image_paths = item["speaker_image_paths"]
+        no_audio = not audio_paths
+        other_ids = [i for i in item["goa_image_ids"] if i != poa_id]
+
+        segments: list[tuple[str, Any, str | None]] = []
+
+        def text(key: str, default: str, **values: Any) -> None:
+            rendered = self._fragment(key, default, **values).strip()
+            if rendered:
+                segments.append(("text", rendered, None))
+
+        text("video_intro", DEFAULT_VIDEO_INTRO, participant=poa_id)
+        segments.append(("video", None, "<video>"))
+
+        if no_audio:
+            text(
+                "poa_intro_video_only",
+                DEFAULT_POA_INTRO_VIDEO_ONLY,
+                participant=poa_id,
+                speaker_id=poa_id,
+            )
+        else:
+            text(
+                "poa_audio_intro",
+                DEFAULT_POA_AUDIO_INTRO,
+                participant=poa_id,
+                speaker_id=poa_id,
+            )
+            segments.append(("audio", audio_paths[str(poa_id)], f"<audio {poa_id}>"))
+            text(
+                "poa_image_intro",
+                DEFAULT_POA_IMAGE_INTRO,
+                participant=poa_id,
+                speaker_id=poa_id,
+            )
+        segments.append(("image", image_paths[str(poa_id)], f"<gallery_image {poa_id}>"))
+
+        if other_ids:
+            text("others_intro", DEFAULT_OTHERS_INTRO, participant=poa_id)
+            for speaker_id in other_ids:
+                text(
+                    "other_open",
+                    DEFAULT_OTHER_OPEN,
+                    participant=poa_id,
+                    speaker_id=speaker_id,
+                )
+                if not no_audio:
+                    segments.append(
+                        ("audio", audio_paths[str(speaker_id)], f"<audio {speaker_id}>")
+                    )
+                    text(
+                        "other_between",
+                        DEFAULT_OTHER_BETWEEN,
+                        participant=poa_id,
+                        speaker_id=speaker_id,
+                    )
+                segments.append(
+                    (
+                        "image",
+                        image_paths[str(speaker_id)],
+                        f"<gallery_image {speaker_id}>",
+                    )
+                )
+                text(
+                    "other_close",
+                    DEFAULT_OTHER_CLOSE,
+                    participant=poa_id,
+                    speaker_id=speaker_id,
+                )
+
+        segments.append(("text", item["closing_prompt"], None))
+        return segments
 
     def render_user_prompt(
         self,
@@ -144,21 +282,16 @@ class FlattenedAudioMode(BaseTaskMode):
         record: Mapping[str, Any],
         item: Mapping[str, Any],
     ) -> str:
-        """As the default, plus the group ids the record does not carry as a scalar.
+        """The whole prompt as prose, with each media part shown as a marker.
 
-        ``conversation_floor`` is a list, and the flattener only keeps scalars,
-        so ``{conversation_floor}`` would otherwise render as itself. ``{goa_ids}``
-        and ``{other_ids}`` are the readable forms this mode's prompt wants.
+        What lands in the result file's ``user`` field. Unlike PA, where the
+        prompt is one block, FA's is spread across a dozen text parts, so
+        recording only the last of them would record almost nothing.
         """
-        goa_ids = item.get("goa_image_ids") or []
-        participant = record.get("participant")
-        other_ids = [i for i in goa_ids if i != participant]
-        extra = {
-            "goa_ids": ", ".join(str(i) for i in goa_ids),
-            "other_ids": ", ".join(str(i) for i in other_ids),
-            "goa_size": len(goa_ids),
-        }
-        return render_prompt(template, {**record, **extra})
+        return " ".join(
+            value if kind == "text" else str(marker)
+            for kind, value, marker in self._segments(item)
+        )
 
     def build_turn(
         self,
@@ -170,41 +303,34 @@ class FlattenedAudioMode(BaseTaskMode):
         model_config,
     ) -> ChatMessage:
         content: list[MediaPart] = []
+        system_prompt_pending = True
 
-        preamble = self.prompt_config.get("preamble", DEFAULT_PREAMBLE)
-        if isinstance(preamble, str) and preamble.strip():
-            content.append(MediaPart.text_part(preamble.strip()))
-
-        if not no_audio:
-            for speaker_id in item["goa_speaker_ids"]:
-                content.append(
-                    MediaPart.text_part(
-                        self._label("audio_label", DEFAULT_AUDIO_LABEL, speaker_id=speaker_id)
+        for kind, value, _marker in self._segments(item):
+            if kind == "text":
+                text = value
+                if system_prompt_pending:
+                    # Folded into the opening instruction rather than the closing
+                    # one: this prompt starts by telling the model what it is
+                    # about to be shown, so the system prompt belongs there.
+                    text = combine_system_and_user_prompt(
+                        system_prompt=system_prompt, user_prompt=text
                     )
-                )
-                content.append(
-                    MediaPart.audio(item["speaker_audio_paths"][str(speaker_id)])
-                )
+                    system_prompt_pending = False
+                content.append(MediaPart.text_part(text))
+            elif kind == "video":
+                content.append(self.video_part(item, model, model_config))
+            elif kind == "audio":
+                content.append(MediaPart.audio(value))
+            elif kind == "image":
+                content.append(MediaPart.image(value))
+            else:
+                raise ValueError(f"Unknown segment kind: {kind!r}")
 
-        for speaker_id in item["goa_image_ids"]:
-            content.append(
-                MediaPart.text_part(
-                    self._label("image_label", DEFAULT_IMAGE_LABEL, speaker_id=speaker_id)
-                )
-            )
-            content.append(MediaPart.image(item["speaker_image_paths"][str(speaker_id)]))
-
-        video_label = self.prompt_config.get("video_label", DEFAULT_VIDEO_LABEL)
-        if isinstance(video_label, str) and video_label.strip():
-            content.append(MediaPart.text_part(video_label.strip()))
-        content.append(self.video_part(item, model, model_config))
-
-        # Last, and only here, is the person of interest named.
-        content.append(self.text_part(item, system_prompt))
         return ChatMessage("user", content)
 
     def result_fields(self, item: Mapping[str, Any]) -> dict[str, Any]:
         return {
+            "poa_id": item["poa_id"],
             "goa_speaker_ids": item["goa_speaker_ids"],
             "goa_image_ids": item["goa_image_ids"],
             "speaker_audio_paths": item["speaker_audio_paths"],

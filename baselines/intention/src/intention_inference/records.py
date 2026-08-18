@@ -216,9 +216,11 @@ def resolve_per_speaker_audio(
 ) -> tuple[dict[str, Any], str | None]:
     """One track per person, nothing stacked.
 
-    The group is reported in ascending id order rather than participant-first:
-    a mode that presents people symmetrically and only names the one of interest
-    at the end would give the answer away by ordering.
+    The group is reported in ascending id order, which is a stable order rather
+    than a meaningful one -- it makes ``goa_speaker_ids`` reproducible across
+    runs and comparable between records. A mode that wants to present people in
+    some other order does so when it builds the turn; FA leads with the person of
+    interest and then follows this order for everyone else.
     """
     empty: dict[str, Any] = {
         "goa_speaker_ids": [],
