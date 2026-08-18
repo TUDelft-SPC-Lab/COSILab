@@ -63,7 +63,7 @@
         "on a backend that does not advertise 'thinking' -- so moving this line to the",
         "qwen7b section below fails at startup rather than being dropped on the floor."
       ],
-      "model_id": "/REPLACE_ME/models/GemmaE4B",
+      "model_id": "/tudelft.net/staff-umbrella/neon/models/GemmaE4B",
       "load": {
         "device_map": "auto",
         "dtype": "auto"
