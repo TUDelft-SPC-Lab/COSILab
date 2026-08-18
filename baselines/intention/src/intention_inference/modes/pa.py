@@ -68,5 +68,22 @@ class PartiallyStackedAudioMode(BaseTaskMode):
         content.append(self.text_part(item, system_prompt))
         return ChatMessage("user", content)
 
+    # Reported for every record, in this order. It is the order the pre-mode
+    # implementation wrote them in, and result files already collected under this
+    # mode carry it, so leave it alone.
+    RESULT_KEYS = (
+        "participant_image_path",
+        "speaker_ids",
+        "participant_speaker_id",
+        "conversation_floor_speaker_ids",
+        "source_audio_paths",
+        "rewritten_audio_paths",
+        "audio_paths",
+        "participant_audio_path",
+        "conversation_floor_audio_paths",
+        "aggregated_conversation_floor_audio_path",
+        "audio_warnings",
+    )
+
     def result_fields(self, item: Mapping[str, Any]) -> dict[str, Any]:
-        return {"participant_image_path": item["participant_image_path"]}
+        return {key: item[key] for key in self.RESULT_KEYS}

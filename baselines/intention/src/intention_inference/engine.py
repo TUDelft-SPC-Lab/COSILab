@@ -133,6 +133,20 @@ def run_inference_pass(
             response = f"[ERROR] {exc}"
             print(f"  [WARN] Error: {exc}", flush=True)
 
+        # Everything past the clip is the mode's to report. This module must not
+        # name an audio field: how many audio parts there are, and whether any of
+        # them is a mix, is precisely what differs between modes -- naming
+        # "speaker_ids" here is what made a flattened-audio run die after it had
+        # already paid for the inference.
+        try:
+            mode_fields = mode.result_fields(item)
+        except Exception as exc:
+            # Reported, not raised, for the same reason a bad clip is: a mode's
+            # bookkeeping bug should cost one record's metadata, not a shard of
+            # several hundred that has already been generated.
+            print(f"  [WARN] {mode.name}.result_fields failed: {exc}", flush=True)
+            mode_fields = {"result_fields_error": f"{type(exc).__name__}: {exc}"}
+
         results.append(
             {
                 "record_index": item["record_index"],
@@ -140,21 +154,7 @@ def run_inference_pass(
                 "source_video_path": item["source_video_path"],
                 "rewritten_video_path": item["rewritten_video_path"],
                 "video_path": item["video_path"],
-                # Whatever grounded the question is the mode's to report: an ids
-                # mode may have no participant image to name here.
-                **mode.result_fields(item),
-                "speaker_ids": item["speaker_ids"],
-                "participant_speaker_id": item["participant_speaker_id"],
-                "conversation_floor_speaker_ids": item["conversation_floor_speaker_ids"],
-                "source_audio_paths": item["source_audio_paths"],
-                "rewritten_audio_paths": item["rewritten_audio_paths"],
-                "audio_paths": item["audio_paths"],
-                "participant_audio_path": item["participant_audio_path"],
-                "conversation_floor_audio_paths": item["conversation_floor_audio_paths"],
-                "aggregated_conversation_floor_audio_path": (
-                    item["aggregated_conversation_floor_audio_path"]
-                ),
-                "audio_warnings": item["audio_warnings"],
+                **mode_fields,
                 "system": system_prompt,
                 "user": item["user_prompt"],
                 "assistant": response,
@@ -201,7 +201,13 @@ def build_summary(
         "error_count": error_count,
         "no_audio": args.no_audio,
         **describe_model_config(model_config),
-        "aggregated_audio_dir": None if args.no_audio else str(aggregated_audio_dir),
+        # Reported only if something was actually written there. Whether a mode
+        # stacks any audio is the mode's business, and a summary that names a
+        # directory the run never created is a summary that misleads: fa mixes
+        # nothing, so it has no mixes directory.
+        "aggregated_audio_dir": (
+            str(aggregated_audio_dir) if aggregated_audio_dir.is_dir() else None
+        ),
         "skip_reasons": dict(sorted(prepared.skip_counter.items())),
     }
 

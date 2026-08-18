@@ -328,12 +328,25 @@ class FlattenedAudioMode(BaseTaskMode):
 
         return ChatMessage("user", content)
 
+    # Reported for every record: who was asked about, who else was in the group,
+    # and which file was whose. There is no mixed track and no
+    # "conversation_floor_audio_paths" here -- nothing is stacked, so the id-to-
+    # path maps are the whole story.
+    RESULT_KEYS = (
+        "poa_id",
+        "participant_image_path",
+        "goa_image_ids",
+        "speaker_image_paths",
+        "goa_speaker_ids",
+        "participant_speaker_id",
+        "conversation_floor_speaker_ids",
+        "speaker_audio_paths",
+        "participant_audio_path",
+        "source_audio_paths",
+        "rewritten_audio_paths",
+        "audio_paths",
+        "audio_warnings",
+    )
+
     def result_fields(self, item: Mapping[str, Any]) -> dict[str, Any]:
-        return {
-            "poa_id": item["poa_id"],
-            "goa_speaker_ids": item["goa_speaker_ids"],
-            "goa_image_ids": item["goa_image_ids"],
-            "speaker_audio_paths": item["speaker_audio_paths"],
-            "speaker_image_paths": item["speaker_image_paths"],
-            "participant_image_path": item["participant_image_path"],
-        }
+        return {key: item[key] for key in self.RESULT_KEYS}
