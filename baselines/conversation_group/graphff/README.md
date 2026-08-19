@@ -28,15 +28,18 @@ benchmark/LSTM/mingling2/cam01/  ->  data/mingling2/cam01/
 benchmark/LSTM/mingling2/cam03/  ->  data/mingling2/cam03/
 ```
 
-Copy the DANTE data from the data deposit:
+DANTE reads its data from `$DANTE_DATA_ROOT` rather than from the repository, so
+the deposit's `benchmark/DANTE/` tree can stay where it is:
 
 ```text
-benchmark/DANTE/mingling1/cam06/  ->  DANTE-master/datasets/mingling1/cam06/
-benchmark/DANTE/mingling1/cam08/  ->  DANTE-master/datasets/mingling1/cam08/
-benchmark/DANTE/mingling1/cam10/  ->  DANTE-master/datasets/mingling1/cam10/
-benchmark/DANTE/mingling2/cam01/  ->  DANTE-master/datasets/mingling2/cam01/
-benchmark/DANTE/mingling2/cam03/  ->  DANTE-master/datasets/mingling2/cam03/
+$DANTE_DATA_ROOT/mingling1/cam06/
+$DANTE_DATA_ROOT/mingling1/cam08/
+$DANTE_DATA_ROOT/mingling1/cam10/
+$DANTE_DATA_ROOT/mingling2/cam01/
+$DANTE_DATA_ROOT/mingling2/cam03/
 ```
+
+See the DANTE section below for the default and how to override it.
 
 The DANTE fold files in the data deposit are split/data artifacts, not trained
 model weights. Model checkpoints are intentionally excluded and can be
@@ -51,10 +54,10 @@ Mingling 1: cam06, cam08, cam10
 Mingling 2: cam01, cam03
 ```
 
-The expected local data layout after downloading the external data package is:
+The expected data layout after downloading the external data package is:
 
 ```text
-data/
+data/                      # LSTM/GraphFF, repository-relative
   mingling1/
     cam06/
     cam08/
@@ -63,7 +66,7 @@ data/
     cam01/
     cam03/
 
-DANTE-master/datasets/
+$DANTE_DATA_ROOT/          # DANTE, outside the repository
   mingling1/
     cam06/
     cam08/
@@ -155,6 +158,53 @@ bash slurm/submit_lstm_mingling_all.sh
 
 ## DANTE
 
+### Paths
+
+DANTE training reads and writes outside the repository. Both roots are
+environment variables with cluster defaults, so pointing the pipeline at a local
+copy of the data is a one-variable change.
+
+| Variable | Default |
+| --- | --- |
+| `DANTE_DATA_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE` |
+| `DANTE_EXPERIMENT_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments` |
+
+Training needs only `DS_utils/` and the fold pickles, so the artifact-generation
+steps below can be skipped entirely when using the data deposit:
+
+```text
+$DANTE_DATA_ROOT/mingling1/cam06/
+  DS_utils/{features.txt,group_names.txt}
+  fold_0/{train,val,test}.p ... fold_4/
+```
+
+Each run writes one directory per fold, fully determined by
+`(dataset, run_id, fold)`:
+
+```text
+$DANTE_EXPERIMENT_ROOT/mingling1/cam06/
+  pair_predictions_1/          # RUN_ID, default 1
+    fold_0/
+      architecture.txt
+      results.txt
+      metrics_summary.csv
+      best_val_model.h5
+      tb/                      # TensorBoard events
+    fold_1/ ... fold_4/
+  logs/
+    pair_predictions_1_fold_0.log
+```
+
+`RUN_ID` is shared by all five tasks of a 5-fold array, so the folds land side by
+side instead of each claiming its own auto-incremented directory. Re-running a
+fold replaces it in place; pass `OVERWRITE=0` (or `--no-overwrite`) to refuse
+instead. Use a different `RUN_ID` to keep runs side by side.
+
+Slurm stdout/stderr goes to `/home/nfs/zli33/slurm_outputs/dante`, overridable
+with `SLURM_LOG_DIR` when using `submit_dante_mingling_all.sh`.
+
+### Training
+
 If the external data package already provides the DANTE artifacts, train one
 fold from `DANTE-master/deep_fformation` with:
 
@@ -162,8 +212,21 @@ fold from `DANTE-master/deep_fformation` with:
 python run_models.py -d mingling1/cam06 -f 0
 ```
 
+Against a local copy of the data:
+
+```bash
+DANTE_DATA_ROOT=/path/to/DANTE \
+DANTE_EXPERIMENT_ROOT=/path/to/experiments \
+python run_models.py -d mingling1/cam06 -f 0
+```
+
+### Regenerating artifacts
+
 To regenerate DANTE artifacts from the canonical Mingling camera CSV files,
-run from the repository root:
+run from the repository root. Note these steps still read and write
+`DANTE-master/datasets/` and are independent of `DANTE_DATA_ROOT`;
+`prepare_mingling.py` additionally expects the per-batch `camXX_batch*/` source
+layout, which the data deposit does not ship.
 
 ```bash
 python DANTE-master/datasets/prepare_mingling.py --session mingling1 --overwrite
@@ -178,15 +241,32 @@ python reformat_data.py -d mingling1/cam06 -p 32 -f 5 -a 6
 python build_dataset.py -p mingling1/cam06
 ```
 
-Submit one 5-fold DANTE camera run on Slurm:
+Submit one 5-fold DANTE camera run on Slurm. All five array tasks share one
+`RUN_ID`, so the folds land under a single `pair_predictions_<RUN_ID>`:
 
 ```bash
 sbatch --export=ALL,DATASET=mingling2/cam01 slurm/run_dante_mingling_cpu_5fold.sbatch
 ```
 
+Do not pass `FOLD` to a 5-fold script: it overrides the array index and makes all
+five tasks train the same fold. Because these scripts use `--export=ALL`, a stale
+`FOLD` or `PROJECT_ROOT` left in the login shell has the same effect. Every job
+echoes `project_root=`, `dante_data_root=`, `run_id=` and `fold=` near the top of
+its log, which is the quickest way to confirm a submission did what you meant.
+
 Submit all reported DANTE cameras:
 
 ```bash
+bash slurm/submit_dante_mingling_all.sh
+```
+
+The submit script creates the Slurm log directory (Slurm rejects a job if it does
+not already exist) and passes `--output`/`--error` explicitly, so `SLURM_LOG_DIR`
+takes effect:
+
+```bash
+SLURM_LOG_DIR=/home/nfs/zli33/slurm_outputs/dante \
+DANTE_DATA_ROOT=/path/to/DANTE \
 bash slurm/submit_dante_mingling_all.sh
 ```
 
@@ -198,14 +278,19 @@ Aggregate LSTM/GraphFF outputs:
 python scripts/aggregate_lstm_mingling_results.py
 ```
 
-Aggregate DANTE outputs:
+Aggregate DANTE outputs (reads `$DANTE_EXPERIMENT_ROOT`, override with
+`--models-root`):
 
 ```bash
 python scripts/aggregate_dante_mingling_results.py
 ```
 
-The aggregation scripts expect per-fold training outputs under `output/`.
-Generated outputs are ignored by Git.
+The LSTM aggregator expects per-fold outputs under `output/`; the DANTE
+aggregator expects them under the experiment root. Both write their aggregate
+CSV files to `output/` and both refuse to run unless all 25 fold summaries are
+present, which also catches a fold accidentally trained twice. Pass
+`--allow-incomplete` to downgrade that to a warning. Generated outputs are
+ignored by Git.
 
 ## Main Files
 
@@ -223,7 +308,9 @@ scripts/aggregate_dante_mingling_results.py  DANTE result aggregation
 DANTE-master/datasets/prepare_mingling.py    DANTE DS_utils generation
 DANTE-master/datasets/reformat_data.py       DANTE pairwise artifact generation
 DANTE-master/datasets/build_dataset.py       DANTE fold pickle generation
+DANTE-master/deep_fformation/dante_paths.py  DANTE data and experiment root resolution
 DANTE-master/deep_fformation/run_models.py   DANTE training entrypoint
+DANTE-master/deep_fformation/utils.py        DANTE model, training loop, output layout
 ```
 
 ## Repository Policy

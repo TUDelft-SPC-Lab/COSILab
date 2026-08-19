@@ -7,8 +7,13 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=2
-#SBATCH --output=logs/slurm-%x-%A.out
-#SBATCH --error=logs/slurm-%x-%A.err
+#SBATCH --output=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A.out
+#SBATCH --error=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A.err
+#
+# Note: Slurm does not expand environment variables in #SBATCH directives, so the
+# log directory above is a literal. Override it per submission with an explicit
+# `sbatch --output=... --error=...`, which takes precedence. The directory must
+# already exist at submit time or Slurm rejects the job.
 #
 # Usage:
 #   sbatch --export=ALL,DATASET=mingling1/cam06,FOLD=0 slurm/run_dante_mingling_fold.sbatch
@@ -19,6 +24,10 @@
 #     Default: $PROJECT_ROOT/apptainer/deep_fformation_dante.sif
 #   DATASET=mingling1/cam06 or mingling2/cam01
 #   FOLD=0
+#   RUN_ID=1             # output goes to <exp_root>/$DATASET/pair_predictions_$RUN_ID/fold_$FOLD
+#   OVERWRITE=1          # 0 refuses to run when that fold directory already exists
+#   DANTE_DATA_ROOT=/path/to/DANTE      # read-only benchmark artifacts
+#   DANTE_EXPERIMENT_ROOT=/path/to/experiments
 #   EPOCHS=600
 #   BATCH_SIZE=1024
 #   PATIENCE=50
@@ -44,6 +53,10 @@ APPTAINER_IMAGE="${APPTAINER_IMAGE:-$PROJECT_ROOT/apptainer/deep_fformation_dant
 
 DATASET="${DATASET:-mingling1/cam06}"
 FOLD="${FOLD:-0}"
+RUN_ID="${RUN_ID:-1}"
+OVERWRITE="${OVERWRITE:-1}"
+DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
+DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments}"
 EPOCHS="${EPOCHS:-600}"
 BATCH_SIZE="${BATCH_SIZE:-1024}"
 PATIENCE="${PATIENCE:-50}"
@@ -66,15 +79,32 @@ mkdir -p \
   "$CACHE_ROOT/tmp" \
   "$RUNTIME_TMP_ROOT"
 
+# Clear node-local scratch on exit, however the task ends. Guarded by the path
+# prefix so an explicitly supplied RUNTIME_TMP_ROOT is never removed.
+cleanup_scratch() {
+  case "$RUNTIME_TMP_ROOT" in
+    /tmp/dante_*)
+      rm -rf "$RUNTIME_TMP_ROOT"
+      echo "cleared node scratch: $RUNTIME_TMP_ROOT"
+      ;;
+    *)
+      echo "leaving node scratch in place (not under /tmp/dante_): $RUNTIME_TMP_ROOT"
+      ;;
+  esac
+}
+trap cleanup_scratch EXIT
+
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 DANTE_ROOT="$PROJECT_ROOT/DANTE-master"
-DATASET_DIR="$DANTE_ROOT/datasets/$DATASET"
+DATASET_DIR="$DANTE_DATA_ROOT/$DATASET"
 FOLD_DIR="$DATASET_DIR/fold_$FOLD"
 RUN_SCRIPT="$DANTE_ROOT/deep_fformation/run_models.py"
+DATASET_LOG_DIR="$DANTE_EXPERIMENT_ROOT/$DATASET/logs"
+FOLD_LOG="$DATASET_LOG_DIR/pair_predictions_${RUN_ID}_fold_${FOLD}.log"
 
 [[ -f "$APPTAINER_IMAGE" ]] || { echo "[ERROR] image not found: $APPTAINER_IMAGE" >&2; exit 2; }
 [[ -f "$RUN_SCRIPT" ]] || { echo "[ERROR] DANTE train script not found: $RUN_SCRIPT" >&2; exit 2; }
@@ -85,13 +115,22 @@ RUN_SCRIPT="$DANTE_ROOT/deep_fformation/run_models.py"
 [[ -f "$FOLD_DIR/val.p" ]] || { echo "[ERROR] missing: $FOLD_DIR/val.p" >&2; exit 2; }
 [[ -f "$FOLD_DIR/test.p" ]] || { echo "[ERROR] missing: $FOLD_DIR/test.p" >&2; exit 2; }
 
+# Apptainer needs both bind sources to exist on the host before the exec.
+mkdir -p "$DANTE_EXPERIMENT_ROOT" "$DATASET_LOG_DIR"
+
 echo "HOST=$(hostname) JOB=${SLURM_JOB_ID:-NA}"
 echo "project_root=$PROJECT_ROOT"
 echo "apptainer_image=$APPTAINER_IMAGE"
 echo "dante_root=$DANTE_ROOT"
 echo "dataset=$DATASET"
+echo "dante_data_root=$DANTE_DATA_ROOT"
+echo "dante_experiment_root=$DANTE_EXPERIMENT_ROOT"
 echo "dataset_dir=$DATASET_DIR"
 echo "fold=$FOLD"
+echo "run_id=$RUN_ID"
+echo "overwrite=$OVERWRITE"
+echo "fold_output_dir=$DANTE_EXPERIMENT_ROOT/$DATASET/pair_predictions_$RUN_ID/fold_$FOLD"
+echo "fold_log=$FOLD_LOG"
 echo "epochs=$EPOCHS"
 echo "batch_size=$BATCH_SIZE"
 echo "patience=$PATIENCE"
@@ -110,6 +149,10 @@ apptainer_env_args=(
   --env DANTE_ROOT="$DANTE_ROOT"
   --env DATASET="$DATASET"
   --env FOLD="$FOLD"
+  --env RUN_ID="$RUN_ID"
+  --env OVERWRITE="$OVERWRITE"
+  --env DANTE_DATA_ROOT="$DANTE_DATA_ROOT"
+  --env DANTE_EXPERIMENT_ROOT="$DANTE_EXPERIMENT_ROOT"
   --env EPOCHS="$EPOCHS"
   --env BATCH_SIZE="$BATCH_SIZE"
   --env PATIENCE="$PATIENCE"
@@ -145,6 +188,8 @@ apptainer exec --cleanenv \
   -B "$HOME:$HOME" \
   -B "$PROJECT_ROOT:$PROJECT_ROOT" \
   -B "$RUNTIME_TMP_ROOT:$RUNTIME_TMP_ROOT" \
+  -B "$DANTE_DATA_ROOT:$DANTE_DATA_ROOT" \
+  -B "$DANTE_EXPERIMENT_ROOT:$DANTE_EXPERIMENT_ROOT" \
   "$APPTAINER_IMAGE" \
   bash -lc '
     set -euo pipefail
@@ -221,6 +266,7 @@ PY
       --patience "$PATIENCE"
       --min_delta "$MIN_DELTA"
       --f1_eval_every "$F1_EVAL_EVERY"
+      --run_id "$RUN_ID"
     )
     if [[ "$NO_POINTNET" == "1" ]]; then
       args+=("-p")
@@ -228,5 +274,8 @@ PY
     if [[ "$SYMMETRIC" == "1" ]]; then
       args+=("-s")
     fi
+    if [[ "$OVERWRITE" == "0" ]]; then
+      args+=("--no-overwrite")
+    fi
     "${PYBIN}" run_models.py "${args[@]}"
-  '
+  ' 2>&1 | tee "$FOLD_LOG"

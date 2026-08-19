@@ -1,7 +1,10 @@
 import numpy as np
 import re
 import argparse
+from pathlib import Path
 from shift_data import *
+
+import dante_paths
 
 # primary set of functions for reformatting the data for use in the Tensorflow
 # need to have created features and groups datasets
@@ -9,11 +12,16 @@ from shift_data import *
 
 
 # generates feature and ground-truth group matrices from data files
-def import_data(dataset):
+# root defaults to the configured DANTE data root; pass an explicit prefix to
+# read from somewhere else (the stage-2 CLI below still uses "../datasets/")
+def import_data(dataset, root=None):
 	dataset = str(dataset)
-	path = "../datasets/" # this should get you to these files, edit if it doesn't
-	Positions = np.genfromtxt(path + dataset + "/DS_utils/features.txt", dtype = 'str')
-	Groups = np.genfromtxt(path + dataset + "/DS_utils/group_names.txt", dtype = 'str', delimiter = ',')
+	if root is None:
+		ds_utils = dante_paths.ds_utils_dir(dataset)
+	else:
+		ds_utils = Path(root) / dataset / "DS_utils"
+	Positions = np.genfromtxt(str(ds_utils / "features.txt"), dtype = 'str')
+	Groups = np.genfromtxt(str(ds_utils / "group_names.txt"), dtype = 'str', delimiter = ',')
 	return Positions, Groups
 
 # run this to generate Groups_at_time, Groups is from import_gc_data()
@@ -239,7 +247,8 @@ if __name__ == "__main__":
 	n_augmented_features = args.n_aug_features
 
 	print("importing data..")
-	Positions, Groups = import_data(dataset)
+	# this stage-2 CLI keeps writing to ../datasets/, so read from there too
+	Positions, Groups = import_data(dataset, root="../datasets/")
 	print("data imported")
 	Groups_at_time = add_time(Groups)
 	print('groups at time made')

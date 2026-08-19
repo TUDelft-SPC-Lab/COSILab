@@ -5,9 +5,14 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+# reuse the root defaults rather than duplicating them
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "DANTE-master" / "deep_fformation"))
+from dante_paths import get_experiment_root  # noqa: E402
 
 
 EXPECTED_CAMERAS = {
@@ -31,9 +36,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--models-root",
-        default=Path("DANTE-master/deep_fformation/models"),
+        default=get_experiment_root(),
         type=Path,
-        help="DANTE models directory containing mingling*/cam*/pair_predictions_* outputs.",
+        help="DANTE experiment root containing mingling*/cam*/pair_predictions_*/fold_* outputs "
+             "(default from DANTE_EXPERIMENT_ROOT).",
     )
     parser.add_argument(
         "--output-root",
@@ -64,7 +70,7 @@ def parse_args() -> argparse.Namespace:
 def parse_file(path: Path) -> pd.DataFrame:
     path_text = path.as_posix()
     match = re.search(
-        r"/(mingling[12])/(cam\d+)/pair_predictions_(\d+)/val_fold_(\d+)/metrics_summary\.csv$",
+        r"/(mingling[12])/(cam\d+)/(?:no_pointnet/)?pair_predictions_([^/]+)/fold_(\d+)/metrics_summary\.csv$",
         path_text,
     )
     if not match:
@@ -76,7 +82,7 @@ def parse_file(path: Path) -> pd.DataFrame:
     df.insert(1, "session", session)
     df.insert(2, "camera", camera)
     df.insert(3, "fold", int(fold))
-    df.insert(4, "run_id", int(run_id))
+    df.insert(4, "run_id", run_id)
     df["source_file"] = str(path)
     return df
 
@@ -134,7 +140,7 @@ def validate_inputs(df: pd.DataFrame, allow_incomplete: bool, excluded: set[tupl
 
 def main() -> None:
     args = parse_args()
-    files = sorted(args.models_root.glob("mingling*/cam*/pair_predictions_*/val_fold_*/metrics_summary.csv"))
+    files = sorted(args.models_root.glob("mingling*/cam*/**/pair_predictions_*/fold_*/metrics_summary.csv"))
     if not files:
         raise SystemExit(f"No metrics_summary CSV files found under {args.models_root}")
 

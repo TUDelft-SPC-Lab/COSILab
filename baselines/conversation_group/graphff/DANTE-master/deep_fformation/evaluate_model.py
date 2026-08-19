@@ -3,6 +3,7 @@ import argparse
 import matplotlib.pyplot as plt
 
 from utils import load_data
+import dante_paths
 
 from reformat_data import add_time, import_data
 from F1_calc import F1_calc
@@ -23,15 +24,17 @@ saves the results to a .txt file. Can also be used to instead calculate the F1
 score on the test set with the --F1 flag.
 
 Example usage:
-python evaluate_model.py -k 0 -m models/mingling1/cam06/pair_predictions_1 -d mingling1/cam06 -f
+python evaluate_model.py -k 0 -d mingling1/cam06 -f \
+    -m $DANTE_EXPERIMENT_ROOT/mingling1/cam06/pair_predictions_1/fold_0
 """
 
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('-k', '--k_fold', type=str, default='0', 
         help="the fold being considered")
-    parser.add_argument('-m', '--model_path', type=str, 
-        help="path to the desired model directory (e.g. models/mingling1/cam06/pair_predictions_1/)", required=True)
+    parser.add_argument('-m', '--model_path', type=str,
+        help="path to a fold output directory containing best_val_model.h5 "
+             "(e.g. <experiment_root>/mingling1/cam06/pair_predictions_1/fold_0)", required=True)
     parser.add_argument('-d', '--dataset', type=str, required=True,
         help="which dataset to use (e.g. mingling1/cam06)")
     parser.add_argument('-f', '--F1', action='store_true', default=False, 
@@ -90,12 +93,12 @@ def is_mingling_dataset(dataset):
 if __name__ == "__main__":
     args = get_args()
 
-    test, train, val = load_data("../datasets/" + args.dataset + "/fold_" + str(args.k_fold))
+    test, train, val = load_data(str(dante_paths.fold_data_dir(args.dataset, args.k_fold)))
     X, y, timestamps = test
     num_test, _, max_people, d = X[0].shape
 
-    model = keras.models.load_model(args.model_path + "/val_fold_" + str(args.k_fold) 
-        + "/best_val_model.h5", custom_objects={'tf':tf , 'max_people':max_people})
+    model = keras.models.load_model(args.model_path + "/best_val_model.h5",
+        custom_objects={'tf':tf , 'max_people':max_people})
 
     preds = model.predict(X)
 

@@ -1,6 +1,7 @@
 import numpy as np
 
 from utils import load_data, train_and_save_model
+import dante_paths
 
 import argparse
 
@@ -27,6 +28,13 @@ def get_args():
     parser.add_argument('--min_delta', type=float, default=0.0, help="minimum validation-MSE improvement for early stopping")
     parser.add_argument('--f1_eval_every', type=int, default=10,
         help="run validation F1/dominant-set evaluation every N epochs; 0 disables epoch-end F1")
+    parser.add_argument('--run_id', type=str, default=dante_paths.get_run_id(),
+        help="run identifier; output goes to <experiment_root>/<dataset>/pair_predictions_<run_id>/fold_<fold> "
+             "(default from RUN_ID, else 1)")
+    parser.add_argument('--overwrite', dest='overwrite', action='store_true', default=True,
+        help="replace an existing fold output directory (default)")
+    parser.add_argument('--no-overwrite', dest='overwrite', action='store_false',
+        help="refuse to run if the fold output directory already exists")
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -37,7 +45,11 @@ if __name__ == "__main__":
     fold = args.fold
 
     # get data
-    test, train, val = load_data("../datasets/" + args.dataset + "/fold_" + str(fold))
+    fold_dir = dante_paths.fold_data_dir(args.dataset, fold)
+    print("data root:       ", dante_paths.get_data_root())
+    print("experiment root: ", dante_paths.get_experiment_root())
+    print("fold data dir:   ", fold_dir)
+    test, train, val = load_data(str(fold_dir))
     for j in range(1):
         # set model architecture
         # Context tranform in the paper
@@ -74,9 +86,10 @@ if __name__ == "__main__":
 
         print("global filters:", global_filters)
         print("combined filters:", combined_filters)
-        train_and_save_model(global_filters, individual_filters, combined_filters, 
+        train_and_save_model(global_filters, individual_filters, combined_filters,
         train, val, test, args.epochs, args.dataset,
         reg=reg, dropout=dropout, fold_num=fold, no_pointnet=args.no_pointnet,
         symmetric=args.symmetric, batch_size=args.batch_size,
         patience=args.patience, min_delta=args.min_delta,
-        f1_eval_every=args.f1_eval_every)
+        f1_eval_every=args.f1_eval_every, run_id=args.run_id,
+        overwrite=args.overwrite)

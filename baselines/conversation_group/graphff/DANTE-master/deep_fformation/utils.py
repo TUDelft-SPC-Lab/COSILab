@@ -4,6 +4,7 @@ import os
 import argparse
 import pickle
 import importlib
+import shutil
 
 import tensorflow as tf
 import keras as keras
@@ -16,6 +17,8 @@ from F1_calc import F1_calc
 import sys
 sys.path.append("../datasets")
 from reformat_data import add_time, import_data
+
+import dante_paths
 
 """
 Holds code to build, train, and save models, as well as loading data.
@@ -62,6 +65,9 @@ def get_args():
     parser.add_argument('--patience', type=int, default=50)
     parser.add_argument('--min_delta', type=float, default=0.0)
     parser.add_argument('--f1_eval_every', type=int, default=10)
+    parser.add_argument('--run_id', type=str, default=dante_paths.get_run_id())
+    parser.add_argument('--overwrite', dest='overwrite', action='store_true', default=True)
+    parser.add_argument('--no-overwrite', dest='overwrite', action='store_false')
 
     return parser.parse_args()
 
@@ -80,31 +86,26 @@ def load_data(path):
 def is_mingling_dataset(dataset):
     return dataset.startswith("mingling1/") or dataset.startswith("mingling2/")
 
-# creates a new directory to save the model to
-def get_path(dataset, no_pointnet=False):
-    path = 'models/' + dataset
-    if not os.path.isdir(path):
-        os.makedirs(path)
+# creates the output directory for one fold of one run
+# the directory is fully determined by (dataset, run_id, fold), so the folds of a
+# 5-fold array job land side by side under a single pair_predictions_<run_id>
+# instead of racing for an auto-incremented one
+def get_path(dataset, run_id, fold, no_pointnet=False, overwrite=True):
+    path = dante_paths.fold_output_dir(dataset, run_id, fold, no_pointnet=no_pointnet)
 
-    if no_pointnet:
-        path += '/no_pointnet'
-        if not os.path.isdir(path):
-            os.makedirs(path)
+    if path.exists():
+        if not overwrite:
+            raise SystemExit(
+                "[ERROR] fold output already exists: " + str(path) + "\n"
+                "Re-run with --overwrite to replace it, or pass a different "
+                "--run_id / RUN_ID to write a separate run."
+            )
+        print('replacing existing fold output at ' + str(path))
+        shutil.rmtree(str(path))
 
-    path = path + '/pair_predictions_'
-    i = 1
-    while True:
-        if not os.path.isdir(path + str(i)):
-            path = path + str(i)
-            os.makedirs(path)
-            print('saving model to ' + path)
-            break
-        else:
-            i += 1
-
-        if i == 10000:
-            raise ValueError("ERROR: could not find models directory")
-    return path
+    os.makedirs(str(path))
+    print('saving model to ' + str(path))
+    return str(path)
 
 
 # gives T=1 and T=2/3 F1 scores
@@ -372,15 +373,19 @@ def build_model(reg_amt, drop_amt, max_people, d, global_filters,
 def train_and_save_model(global_filters, individual_filters, combined_filters,
     train, val, test, epochs, dataset, reg=0.0000001, dropout=.35, fold_num=0,
     no_pointnet=False, symmetric=False, batch_size=1024, patience=50,
-    min_delta=0.0, f1_eval_every=10):
+    min_delta=0.0, f1_eval_every=10, run_id=dante_paths.DEFAULT_RUN_ID,
+    overwrite=True):
 
     # ensures repeatability
     tf.set_random_seed(0)
     np.random.seed(0)
 
     num_train, _, max_people, d = train[0][0].shape
-    # save achitecture
-    path = get_path(dataset, no_pointnet)
+    # everything this fold produces goes in one directory. architecture.txt lives
+    # here rather than one level up because the architecture is resampled per
+    # fold, so a run-level file would be overwritten by each fold in turn.
+    path = get_path(dataset, run_id, fold_num, no_pointnet=no_pointnet,
+        overwrite=overwrite)
     file = open(path + '/architecture.txt', 'w+')
     file.write("global: " + str(global_filters) + "\nindividual: " +
         str(individual_filters) + "\ncombined: " + str(combined_filters) +
@@ -411,7 +416,7 @@ def train_and_save_model(global_filters, individual_filters, combined_filters,
     print("MODEL IS IN {}".format(path))
     print("training config: epochs={}, batch_size={}, patience={}, min_delta={}, early_stop_monitor=val_mean_squared_error, f1_eval_every={}".format(
         epochs, batch_size, patience, min_delta, f1_eval_every))
-    tensorboard = keras.callbacks.TensorBoard(log_dir='./logs')
+    tensorboard = keras.callbacks.TensorBoard(log_dir=os.path.join(path, 'tb'))
 
     model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size,
         validation_data=(X_val, Y_val), callbacks=[tensorboard, history, early_stop])
@@ -425,14 +430,10 @@ def train_and_save_model(global_filters, individual_filters, combined_filters,
     best_val_f1s_two_thirds.append(history.val_f1_two_thirds_obj['best_f1'])
 
     # save model
-    name = path + '/val_fold_' + str(fold_num)
-    if not os.path.isdir(name):
-        os.makedirs(name)
+    write_history(path + '/results.txt', history, test, model)
 
-    write_history(name + '/results.txt', history, test, model)
-
-    model.save(name + '/best_val_model.h5')
-    print("saved best val model as " + '/best_val_model.h5')
+    model.save(path + '/best_val_model.h5')
+    print("saved best val model as " + path + '/best_val_model.h5')
 
     file.write("\n\nbest overall val loss: " + str(min(best_val_mses)))
     file.write("\nbest val losses per fold: " + str(best_val_mses))
@@ -449,7 +450,7 @@ if __name__ == "__main__":
     args = get_args()
 
     # get data
-    test, train, val = load_data("../datasets/" + args.dataset + "/fold_" + args.fold)
+    test, train, val = load_data(str(dante_paths.fold_data_dir(args.dataset, args.fold)))
 
     # set model architecture
     global_filters = [64, 128, 512]
@@ -461,4 +462,5 @@ if __name__ == "__main__":
         reg=args.reg, dropout=args.dropout, fold_num=args.fold, no_pointnet=args.no_pointnet,
         symmetric=args.symmetric, batch_size=args.batch_size,
         patience=args.patience, min_delta=args.min_delta,
-        f1_eval_every=args.f1_eval_every)
+        f1_eval_every=args.f1_eval_every, run_id=args.run_id,
+        overwrite=args.overwrite)
