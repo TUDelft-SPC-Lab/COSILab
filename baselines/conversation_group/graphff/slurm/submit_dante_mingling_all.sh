@@ -23,6 +23,7 @@ fi
 DANTE_SCRIPT="${DANTE_SCRIPT:-slurm/run_dante_mingling_cpu_5fold.sbatch}"
 SCRIPT="$PROJECT_ROOT/$DANTE_SCRIPT"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
+DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments}"
 SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/dante}"
 DATASETS=(
   "mingling1/cam06"
@@ -37,8 +38,9 @@ DATASETS=(
 
 # Slurm rejects a job outright if the --output directory does not already exist.
 mkdir -p "$SLURM_LOG_DIR"
-echo "data root:      $DANTE_DATA_ROOT"
-echo "slurm log dir:  $SLURM_LOG_DIR"
+echo "data root:       $DANTE_DATA_ROOT"
+echo "experiment root: $DANTE_EXPERIMENT_ROOT"
+echo "slurm log dir:   $SLURM_LOG_DIR"
 
 for dataset in "${DATASETS[@]}"; do
   dataset_dir="$DANTE_DATA_ROOT/$dataset"
@@ -50,7 +52,7 @@ for dataset in "${DATASETS[@]}"; do
     [[ -f "$dataset_dir/fold_$fold/test.p" ]] || { echo "[ERROR] missing: $dataset_dir/fold_$fold/test.p" >&2; exit 2; }
   done
 
-  export_arg="ALL,DATASET=$dataset,DANTE_DATA_ROOT=$DANTE_DATA_ROOT"
+  export_arg="ALL,DATASET=$dataset,DANTE_DATA_ROOT=$DANTE_DATA_ROOT,DANTE_EXPERIMENT_ROOT=$DANTE_EXPERIMENT_ROOT"
   if [[ -n "${EXTRA_EXPORTS:-}" ]]; then
     export_arg="$export_arg,$EXTRA_EXPORTS"
   fi
