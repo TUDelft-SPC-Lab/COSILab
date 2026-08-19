@@ -88,8 +88,8 @@ def is_mingling_dataset(dataset):
 
 # creates the output directory for one fold of one run
 # the directory is fully determined by (dataset, run_id, fold), so the folds of a
-# 5-fold array job land side by side under a single pair_predictions_<run_id>
-# instead of racing for an auto-incremented one
+# 5-fold array job land side by side under a single exp_<run_id> instead of
+# racing for an auto-incremented one
 def get_path(dataset, run_id, fold, no_pointnet=False, overwrite=True):
     path = dante_paths.fold_output_dir(dataset, run_id, fold, no_pointnet=no_pointnet)
 

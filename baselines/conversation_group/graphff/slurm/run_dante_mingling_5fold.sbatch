@@ -19,8 +19,8 @@
 #   sbatch --export=ALL,DATASET=mingling2/cam01 slurm/run_dante_mingling_5fold.sbatch
 #
 # RUN_ID is shared by all five tasks, so the folds land side by side under one
-# pair_predictions_$RUN_ID. Do NOT pass FOLD here: it would override the array
-# index and make all five tasks train the same fold.
+# exp_$RUN_ID. Do NOT pass FOLD here: it would override the array index and make
+# all five tasks train the same fold.
 #
 # Optional overrides are forwarded to run_dante_mingling_fold.sbatch:
 #   APPTAINER_IMAGE=/path/to/image.sif

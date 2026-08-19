@@ -25,7 +25,7 @@ score on the test set with the --F1 flag.
 
 Example usage:
 python evaluate_model.py -k 0 -d mingling1/cam06 -f \
-    -m $DANTE_EXPERIMENT_ROOT/mingling1/cam06/pair_predictions_1/fold_0
+    -m $DANTE_EXPERIMENT_ROOT/exp_1/mingling1/cam06/fold_0
 """
 
 def get_args():
@@ -34,7 +34,7 @@ def get_args():
         help="the fold being considered")
     parser.add_argument('-m', '--model_path', type=str,
         help="path to a fold output directory containing best_val_model.h5 "
-             "(e.g. <experiment_root>/mingling1/cam06/pair_predictions_1/fold_0)", required=True)
+             "(e.g. <experiment_root>/exp_1/mingling1/cam06/fold_0)", required=True)
     parser.add_argument('-d', '--dataset', type=str, required=True,
         help="which dataset to use (e.g. mingling1/cam06)")
     parser.add_argument('-f', '--F1', action='store_true', default=False, 

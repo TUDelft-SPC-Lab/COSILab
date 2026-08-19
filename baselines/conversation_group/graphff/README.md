@@ -178,27 +178,34 @@ $DANTE_DATA_ROOT/mingling1/cam06/
   fold_0/{train,val,test}.p ... fold_4/
 ```
 
-Each run writes one directory per fold, fully determined by
-`(dataset, run_id, fold)`:
+One experiment holds every camera and fold. `RUN_ID` is the top level, so each
+output path is fully determined by `(run_id, dataset, fold)`:
 
 ```text
-$DANTE_EXPERIMENT_ROOT/mingling1/cam06/
-  pair_predictions_1/          # RUN_ID, default 1
-    fold_0/
-      architecture.txt
-      results.txt
-      metrics_summary.csv
-      best_val_model.h5
-      tb/                      # TensorBoard events
-    fold_1/ ... fold_4/
-  logs/
-    pair_predictions_1_fold_0.log
+$DANTE_EXPERIMENT_ROOT/
+  exp_1/                       # RUN_ID, default 1
+    mingling1/
+      cam06/
+        fold_0/
+          architecture.txt
+          results.txt
+          metrics_summary.csv
+          best_val_model.h5
+          tb/                  # TensorBoard events
+        fold_1/ ... fold_4/
+        logs/
+          fold_0.log ... fold_4.log
+      cam08/ ... cam10/
+    mingling2/
+      cam01/ ... cam03/
 ```
 
 `RUN_ID` is shared by all five tasks of a 5-fold array, so the folds land side by
-side instead of each claiming its own auto-incremented directory. Re-running a
-fold replaces it in place; pass `OVERWRITE=0` (or `--no-overwrite`) to refuse
-instead. Use a different `RUN_ID` to keep runs side by side.
+side rather than each claiming its own directory. Re-running with the same
+`RUN_ID` replaces a fold in place, which is the default; pass `OVERWRITE=0` (or
+`--no-overwrite`) to refuse instead. Use a different `RUN_ID` to keep a run
+side by side with the previous one, for example `RUN_ID=2` or
+`RUN_ID=nopointnet` (`exp_2/`, `exp_nopointnet/`).
 
 Slurm stdout/stderr goes to `/home/nfs/zli33/slurm_outputs/dante`, overridable
 with `SLURM_LOG_DIR` when using `submit_dante_mingling_all.sh`.
@@ -242,7 +249,7 @@ python build_dataset.py -p mingling1/cam06
 ```
 
 Submit one 5-fold DANTE camera run on Slurm. All five array tasks share one
-`RUN_ID`, so the folds land under a single `pair_predictions_<RUN_ID>`:
+`RUN_ID`, so the folds land under a single `exp_<RUN_ID>`:
 
 ```bash
 sbatch --export=ALL,DATASET=mingling2/cam01 slurm/run_dante_mingling_cpu_5fold.sbatch
@@ -278,19 +285,32 @@ Aggregate LSTM/GraphFF outputs:
 python scripts/aggregate_lstm_mingling_results.py
 ```
 
-Aggregate DANTE outputs (reads `$DANTE_EXPERIMENT_ROOT`, override with
-`--models-root`):
+Aggregate DANTE outputs. This reads `$DANTE_EXPERIMENT_ROOT/exp_<run-id>` and
+defaults to the same `RUN_ID` the training jobs use, so it collates exactly one
+experiment:
 
 ```bash
-python scripts/aggregate_dante_mingling_results.py
+python scripts/aggregate_dante_mingling_results.py                 # exp_1
+python scripts/aggregate_dante_mingling_results.py --run-id 2      # exp_2
+python scripts/aggregate_dante_mingling_results.py --all-runs      # every exp_*
 ```
+
+`--all-runs` is for comparing experiments side by side; because the same
+`(camera, fold)` then appears once per experiment, it reports duplicates and
+needs `--allow-incomplete` to proceed.
 
 The LSTM aggregator expects per-fold outputs under `output/`; the DANTE
 aggregator expects them under the experiment root. Both write their aggregate
 CSV files to `output/` and both refuse to run unless all 25 fold summaries are
-present, which also catches a fold accidentally trained twice. Pass
+present, which also catches a fold that failed or was trained twice. Pass
 `--allow-incomplete` to downgrade that to a warning. Generated outputs are
 ignored by Git.
+
+Each aggregate row carries the `mean` and `std` across folds of `auc`, `f1_1`,
+`precision_1`, `recall_1`, `f1_2_3`, `precision_2_3`, `recall_2_3`, plus `n_rows`
+for how many fold runs are behind it. Nothing is recomputed: the numbers come
+from each fold's `metrics_summary.csv`, written at the end of training using the
+restored best-validation-MSE weights.
 
 ## Main Files
 

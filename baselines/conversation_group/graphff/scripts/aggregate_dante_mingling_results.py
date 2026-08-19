@@ -12,7 +12,7 @@ import pandas as pd
 
 # reuse the root defaults rather than duplicating them
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "DANTE-master" / "deep_fformation"))
-from dante_paths import get_experiment_root  # noqa: E402
+from dante_paths import get_experiment_root, get_run_id  # noqa: E402
 
 
 EXPECTED_CAMERAS = {
@@ -38,8 +38,20 @@ def parse_args() -> argparse.Namespace:
         "--models-root",
         default=get_experiment_root(),
         type=Path,
-        help="DANTE experiment root containing mingling*/cam*/pair_predictions_*/fold_* outputs "
+        help="DANTE experiment root containing exp_*/mingling*/cam*/fold_* outputs "
              "(default from DANTE_EXPERIMENT_ROOT).",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=get_run_id(),
+        help="which experiment to aggregate, i.e. exp_<run-id> (default from RUN_ID, else 1). "
+             "Use --all-runs to aggregate every experiment under the root.",
+    )
+    parser.add_argument(
+        "--all-runs",
+        action="store_true",
+        help="aggregate every exp_* under the root. Folds repeated across experiments "
+             "are reported as duplicates.",
     )
     parser.add_argument(
         "--output-root",
@@ -70,13 +82,13 @@ def parse_args() -> argparse.Namespace:
 def parse_file(path: Path) -> pd.DataFrame:
     path_text = path.as_posix()
     match = re.search(
-        r"/(mingling[12])/(cam\d+)/(?:no_pointnet/)?pair_predictions_([^/]+)/fold_(\d+)/metrics_summary\.csv$",
+        r"/exp_([^/]+)/(mingling[12])/(cam\d+)/(?:no_pointnet/)?fold_(\d+)/metrics_summary\.csv$",
         path_text,
     )
     if not match:
         raise ValueError(f"Unexpected metrics path: {path}")
 
-    session, camera, run_id, fold = match.groups()
+    run_id, session, camera, fold = match.groups()
     df = pd.read_csv(path)
     df.insert(0, "pipeline", "DANTE")
     df.insert(1, "session", session)
@@ -140,9 +152,17 @@ def validate_inputs(df: pd.DataFrame, allow_incomplete: bool, excluded: set[tupl
 
 def main() -> None:
     args = parse_args()
-    files = sorted(args.models_root.glob("mingling*/cam*/**/pair_predictions_*/fold_*/metrics_summary.csv"))
+    experiment_glob = "exp_*" if args.all_runs else "exp_" + str(args.run_id)
+    search_root = args.models_root / experiment_glob
+    files = sorted(args.models_root.glob(
+        experiment_glob + "/mingling*/cam*/**/fold_*/metrics_summary.csv"))
     if not files:
-        raise SystemExit(f"No metrics_summary CSV files found under {args.models_root}")
+        raise SystemExit(
+            f"No metrics_summary CSV files found under {search_root}\n"
+            "Check --models-root / DANTE_EXPERIMENT_ROOT, and --run-id "
+            "(or pass --all-runs to search every experiment)."
+        )
+    print(f"aggregating {len(files)} fold summaries from {search_root}")
 
     excluded = set()
     for value in args.exclude_camera:

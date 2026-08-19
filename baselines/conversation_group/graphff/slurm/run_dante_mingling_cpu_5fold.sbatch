@@ -21,8 +21,8 @@
 #
 # Override EPOCHS/PATIENCE/F1_EVAL_EVERY for sensitivity runs.
 # RUN_ID is shared by all five tasks, so the folds land side by side under one
-# pair_predictions_$RUN_ID. Do NOT pass FOLD here: it would override the array
-# index and make all five tasks train the same fold.
+# exp_$RUN_ID. Do NOT pass FOLD here: it would override the array index and make
+# all five tasks train the same fold.
 
 set -euo pipefail
 

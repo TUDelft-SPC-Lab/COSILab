@@ -8,7 +8,9 @@ Everything the training stage reads or writes is derived from two roots:
 
 ``DANTE_EXPERIMENT_ROOT``
     Where runs are written, laid out as
-    ``<session>/<camera>/pair_predictions_<run_id>/fold_<k>``.
+    ``exp_<run_id>/<session>/<camera>/fold_<k>``. The run id is the top level, so
+    one experiment holds every camera and fold, and re-running with the same id
+    rewrites it in place.
 
 Both default to the shared cluster locations and can be overridden with the
 corresponding environment variables, which is all that is needed to run the same
@@ -65,28 +67,28 @@ def fold_data_dir(dataset, fold):
 
 # -------------------------- experiments (write) --------------------------
 
-def experiment_dir(dataset):
-    """e.g. <experiment_root>/mingling1/cam06"""
-    return get_experiment_root() / dataset
+def experiment_dir(run_id):
+    """e.g. <experiment_root>/exp_1 -- holds every camera and fold of one run."""
+    return get_experiment_root() / ("exp_" + str(run_id))
 
 
-def run_dir(dataset, run_id, no_pointnet=False):
-    """e.g. <experiment_root>/mingling1/cam06/pair_predictions_1"""
-    base = experiment_dir(dataset)
+def dataset_output_dir(dataset, run_id, no_pointnet=False):
+    """e.g. <experiment_root>/exp_1/mingling1/cam06"""
+    base = experiment_dir(run_id) / dataset
     if no_pointnet:
         base = base / "no_pointnet"
-    return base / ("pair_predictions_" + str(run_id))
+    return base
 
 
 def fold_output_dir(dataset, run_id, fold, no_pointnet=False):
     """Everything one fold produces lives here, including its TensorBoard events."""
-    return run_dir(dataset, run_id, no_pointnet) / ("fold_" + str(fold))
+    return dataset_output_dir(dataset, run_id, no_pointnet) / ("fold_" + str(fold))
 
 
 def tensorboard_dir(dataset, run_id, fold, no_pointnet=False):
     return fold_output_dir(dataset, run_id, fold, no_pointnet) / "tb"
 
 
-def logs_dir(dataset):
-    """Per-fold console logs, one directory per camera."""
-    return experiment_dir(dataset) / "logs"
+def logs_dir(dataset, run_id, no_pointnet=False):
+    """Per-fold console logs, sitting alongside that camera's fold directories."""
+    return dataset_output_dir(dataset, run_id, no_pointnet) / "logs"

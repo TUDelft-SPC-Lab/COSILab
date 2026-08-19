@@ -24,7 +24,7 @@
 #     Default: $PROJECT_ROOT/apptainer/deep_fformation_dante.sif
 #   DATASET=mingling1/cam06 or mingling2/cam01
 #   FOLD=0
-#   RUN_ID=1             # output goes to <exp_root>/$DATASET/pair_predictions_$RUN_ID/fold_$FOLD
+#   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/$DATASET/fold_$FOLD
 #   OVERWRITE=1          # 0 refuses to run when that fold directory already exists
 #   DANTE_DATA_ROOT=/path/to/DANTE      # read-only benchmark artifacts
 #   DANTE_EXPERIMENT_ROOT=/path/to/experiments
@@ -103,8 +103,9 @@ DANTE_ROOT="$PROJECT_ROOT/DANTE-master"
 DATASET_DIR="$DANTE_DATA_ROOT/$DATASET"
 FOLD_DIR="$DATASET_DIR/fold_$FOLD"
 RUN_SCRIPT="$DANTE_ROOT/deep_fformation/run_models.py"
-DATASET_LOG_DIR="$DANTE_EXPERIMENT_ROOT/$DATASET/logs"
-FOLD_LOG="$DATASET_LOG_DIR/pair_predictions_${RUN_ID}_fold_${FOLD}.log"
+DATASET_OUT_DIR="$DANTE_EXPERIMENT_ROOT/exp_$RUN_ID/$DATASET"
+DATASET_LOG_DIR="$DATASET_OUT_DIR/logs"
+FOLD_LOG="$DATASET_LOG_DIR/fold_${FOLD}.log"
 
 [[ -f "$APPTAINER_IMAGE" ]] || { echo "[ERROR] image not found: $APPTAINER_IMAGE" >&2; exit 2; }
 [[ -f "$RUN_SCRIPT" ]] || { echo "[ERROR] DANTE train script not found: $RUN_SCRIPT" >&2; exit 2; }
@@ -129,7 +130,7 @@ echo "dataset_dir=$DATASET_DIR"
 echo "fold=$FOLD"
 echo "run_id=$RUN_ID"
 echo "overwrite=$OVERWRITE"
-echo "fold_output_dir=$DANTE_EXPERIMENT_ROOT/$DATASET/pair_predictions_$RUN_ID/fold_$FOLD"
+echo "fold_output_dir=$DATASET_OUT_DIR/fold_$FOLD"
 echo "fold_log=$FOLD_LOG"
 echo "epochs=$EPOCHS"
 echo "batch_size=$BATCH_SIZE"

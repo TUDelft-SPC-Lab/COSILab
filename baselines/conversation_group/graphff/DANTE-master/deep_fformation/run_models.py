@@ -29,7 +29,7 @@ def get_args():
     parser.add_argument('--f1_eval_every', type=int, default=10,
         help="run validation F1/dominant-set evaluation every N epochs; 0 disables epoch-end F1")
     parser.add_argument('--run_id', type=str, default=dante_paths.get_run_id(),
-        help="run identifier; output goes to <experiment_root>/<dataset>/pair_predictions_<run_id>/fold_<fold> "
+        help="run identifier; output goes to <experiment_root>/exp_<run_id>/<dataset>/fold_<fold> "
              "(default from RUN_ID, else 1)")
     parser.add_argument('--overwrite', dest='overwrite', action='store_true', default=True,
         help="replace an existing fold output directory (default)")
