@@ -35,6 +35,7 @@
 #   EPOCHS=600  BATCH_SIZE=1024  PATIENCE=50  MIN_DELTA=0.0  F1_EVAL_EVERY=10
 #   NO_POINTNET=0  SYMMETRIC=0
 #   APPTAINER_IMAGE=/path/to/image.sif
+#     Default: /tudelft.net/staff-umbrella/neon/apptainer/deep_fformation_dante.sif
 #   DANTE_PYTHON_BIN=/path/to/python-inside-container
 
 set -euo pipefail
@@ -48,7 +49,7 @@ else
   PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
 
-APPTAINER_IMAGE="${APPTAINER_IMAGE:-$PROJECT_ROOT/apptainer/deep_fformation_dante.sif}"
+APPTAINER_IMAGE="${APPTAINER_IMAGE:-/tudelft.net/staff-umbrella/neon/apptainer/deep_fformation_dante.sif}"
 
 # the fold is the array index; FOLD is only a fallback for non-array use
 FOLD="${SLURM_ARRAY_TASK_ID:-${FOLD:-0}}"

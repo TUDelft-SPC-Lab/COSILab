@@ -18,9 +18,20 @@ Generated `.sif` images are large binary artifacts and are ignored by Git.
 The default runtime remains the PyTorch environment. DANTE Slurm scripts select
 `/opt/conda/envs/dante_tf1/bin/python` through `DANTE_PYTHON_BIN`.
 
+## Image Location
+
+The DANTE job script looks for the image on shared storage:
+
+```text
+/tudelft.net/staff-umbrella/neon/apptainer/deep_fformation_dante.sif
+```
+
+Override with `APPTAINER_IMAGE=/path/to/image.sif` at submit time. The LSTM/GraphFF
+scripts still default to `$PROJECT_ROOT/apptainer/deep_fformation_dante.sif`.
+
 ## Build
 
-Run from the repository root:
+Run from the repository root, then move the image to the shared location above:
 
 ```bash
 apptainer build apptainer/deep_fformation_dante.sif apptainer/deep_fformation.def
@@ -34,17 +45,23 @@ apptainer build --fakeroot apptainer/deep_fformation_dante.sif apptainer/deep_ff
 
 ## Quick Checks
 
+Against the shared image:
+
+```bash
+SIF=/tudelft.net/staff-umbrella/neon/apptainer/deep_fformation_dante.sif
+```
+
 Check the LSTM/GraphFF environment:
 
 ```bash
-apptainer exec --nv apptainer/deep_fformation_dante.sif \
+apptainer exec --nv "$SIF" \
   /opt/conda/envs/py371/bin/python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
 ```
 
 Check the DANTE environment:
 
 ```bash
-apptainer exec --nv apptainer/deep_fformation_dante.sif \
+apptainer exec --nv "$SIF" \
   /opt/conda/envs/dante_tf1/bin/python -c "import tensorflow as tf, keras; print(tf.__version__); print(keras.__version__)"
 ```
 
@@ -106,5 +123,8 @@ The expected workflow is:
 
 1. Commit recipe changes when dependencies change.
 2. Build the `.sif` image locally or on a suitable build machine.
-3. Place the image at `apptainer/deep_fformation_dante.sif`, or set
-   `APPTAINER_IMAGE=/path/to/image.sif` when submitting jobs.
+3. Place the image at
+   `/tudelft.net/staff-umbrella/neon/apptainer/deep_fformation_dante.sif` for the
+   DANTE jobs, or at `apptainer/deep_fformation_dante.sif` for the LSTM/GraphFF
+   jobs. Either default can be overridden with `APPTAINER_IMAGE=/path/to/image.sif`
+   when submitting.
