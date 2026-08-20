@@ -178,16 +178,21 @@ for dataset in "${DATASETS[@]}"; do
     export_arg="$export_arg,$EXTRA_EXPORTS"
   fi
 
+  # built up in steps rather than one literal: expanding a possibly-empty array
+  # under `set -u` aborts on bash < 4.4, which is what the cluster runs
   sbatch_args=(
     --job-name="$job_name"
     --array="$ARRAY_SPEC"
     --output="$SLURM_LOG_DIR/slurm-%x-%A_%a.out"
     --error="$SLURM_LOG_DIR/slurm-%x-%A_%a.err"
-    "${SBATCH_RESOURCE_ARGS[@]}"
-    "${SBATCH_EXTRA_ARGS[@]}"
-    --export="$export_arg"
-    "$SCRIPT"
   )
+  if [[ ${#SBATCH_RESOURCE_ARGS[@]} -gt 0 ]]; then
+    sbatch_args+=("${SBATCH_RESOURCE_ARGS[@]}")
+  fi
+  if [[ ${#SBATCH_EXTRA_ARGS[@]} -gt 0 ]]; then
+    sbatch_args+=("${SBATCH_EXTRA_ARGS[@]}")
+  fi
+  sbatch_args+=(--export="$export_arg" "$SCRIPT")
 
   if [[ "${DRY_RUN:-0}" == "1" ]]; then
     printf 'sbatch'

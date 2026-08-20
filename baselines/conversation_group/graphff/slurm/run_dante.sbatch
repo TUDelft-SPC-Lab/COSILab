@@ -182,8 +182,10 @@ if [[ "$DANTE_USE_GPU" == "1" && -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   apptainer_env_args+=(--env CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES")
 fi
 
+# ${arr[@]+"${arr[@]}"} rather than "${arr[@]}": apptainer_gpu_args is empty on
+# CPU, and expanding an empty array under `set -u` aborts on bash < 4.4
 apptainer exec --cleanenv \
-  "${apptainer_gpu_args[@]}" \
+  ${apptainer_gpu_args[@]+"${apptainer_gpu_args[@]}"} \
   "${apptainer_env_args[@]}" \
   -B "$HOME:$HOME" \
   -B "$PROJECT_ROOT:$PROJECT_ROOT" \
