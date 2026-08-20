@@ -65,26 +65,27 @@ bash slurm/submit_lstm_mingling_all.sh
 
 ## DANTE Slurm Example
 
-Run one five-fold camera job:
+Run one five-fold camera job. The camera number selects the Mingling session
+(06, 08, 10 are mingling1; 01, 03 are mingling2):
 
 ```bash
-sbatch --export=ALL,DATASET=mingling1/cam06 slurm/run_dante_mingling_cpu_5fold.sbatch
+bash slurm/submit_dante.sh 6
 ```
 
 Run all reported DANTE cameras:
 
 ```bash
-bash slurm/submit_dante_mingling_all.sh
+bash slurm/submit_dante.sh all
 ```
 
-The GPU DANTE wrapper is also available:
+DANTE runs on CPU by default. Request the GPU profile with:
 
 ```bash
-sbatch --export=ALL,DATASET=mingling1/cam06 slurm/run_dante_mingling_5fold.sbatch
+USE_GPU=1 bash slurm/submit_dante.sh 6
 ```
 
-If TensorFlow 1.14 is incompatible with the available GPU runtime, use the CPU
-wrapper.
+If TensorFlow 1.14 is incompatible with the available GPU runtime, stay on the
+CPU default.
 
 ## Git Tracking Policy
 

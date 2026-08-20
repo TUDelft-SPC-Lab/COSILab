@@ -208,7 +208,7 @@ side by side with the previous one, for example `RUN_ID=2` or
 `RUN_ID=nopointnet` (`exp_2/`, `exp_nopointnet/`).
 
 Slurm stdout/stderr goes to `/home/nfs/zli33/slurm_outputs/dante`, overridable
-with `SLURM_LOG_DIR` when using `submit_dante_mingling_all.sh`.
+with `SLURM_LOG_DIR` when using `slurm/submit_dante.sh`.
 
 ### Training
 
@@ -248,33 +248,55 @@ python reformat_data.py -d mingling1/cam06 -p 32 -f 5 -a 6
 python build_dataset.py -p mingling1/cam06
 ```
 
-Submit one 5-fold DANTE camera run on Slurm. All five array tasks share one
-`RUN_ID`, so the folds land under a single `exp_<RUN_ID>`:
+### Submitting on Slurm
 
-```bash
-sbatch --export=ALL,DATASET=mingling2/cam01 slurm/run_dante_mingling_cpu_5fold.sbatch
+Everything goes through one entry point, which takes a camera number and an
+optional fold. The Mingling session is derived from the camera number, so you
+never type it:
+
+```text
+06, 08, 10  ->  mingling1
+01, 03      ->  mingling2
 ```
 
-Do not pass `FOLD` to a 5-fold script: it overrides the array index and makes all
-five tasks train the same fold. Because these scripts use `--export=ALL`, a stale
-`FOLD` or `PROJECT_ROOT` left in the login shell has the same effect. Every job
-echoes `project_root=`, `dante_data_root=`, `run_id=` and `fold=` near the top of
-its log, which is the quickest way to confirm a submission did what you meant.
-
-Submit all reported DANTE cameras:
-
 ```bash
-bash slurm/submit_dante_mingling_all.sh
+bash slurm/submit_dante.sh 6          # cam06, all 5 folds
+bash slurm/submit_dante.sh all        # all 5 cameras, 25 tasks
+bash slurm/submit_dante.sh 6 2        # cam06, fold 2 only
+bash slurm/submit_dante.sh 10         # cam10 (mingling1)
+bash slurm/submit_dante.sh 1          # cam01 (mingling2)
 ```
 
-The submit script creates the Slurm log directory (Slurm rejects a job if it does
-not already exist) and passes `--output`/`--error` explicitly, so `SLURM_LOG_DIR`
-takes effect:
+Numbers are zero-padded before lookup, so `6` and `06` are the same camera, and
+`1` (cam01) stays distinct from `10` (cam10). `cam06` is accepted too.
+
+Common overrides:
 
 ```bash
-SLURM_LOG_DIR=/home/nfs/zli33/slurm_outputs/dante \
-DANTE_DATA_ROOT=/path/to/DANTE \
-bash slurm/submit_dante_mingling_all.sh
+DRY_RUN=1  bash slurm/submit_dante.sh all    # print the sbatch lines, submit nothing
+USE_GPU=1  bash slurm/submit_dante.sh 6      # GPU profile instead of CPU
+RUN_ID=2   bash slurm/submit_dante.sh all    # write to exp_2 instead of exp_1
+OVERWRITE=0 bash slurm/submit_dante.sh 6     # refuse if the fold already exists
+EXTRA_EXPORTS='EPOCHS=300,PATIENCE=30' bash slurm/submit_dante.sh 6
+```
+
+The submit script resolves the camera, validates the data files before
+submitting, creates the Slurm log directory (Slurm rejects a job if it does not
+exist), and picks the resource profile: CPU by default (64G, 8 cores, 32h) or
+`--gres=gpu:1` with 32G, 2 cores and 16h when `USE_GPU=1`.
+
+One array task trains one fold, so `--array=0-4` is five independently scheduled
+jobs, each with its own allocation and its own walltime clock. Selecting a single
+fold narrows the array (`--array=2-2`) rather than setting `FOLD` — setting
+`FOLD` would apply to every task at once. Because submission uses `--export=ALL`,
+a stale `FOLD` or `PROJECT_ROOT` in your login shell can do exactly that, so
+every job echoes `project_root=`, `dante_data_root=`, `run_id=` and `fold=` near
+the top of its log.
+
+To submit the array script directly, bypassing the camera resolution:
+
+```bash
+sbatch --export=ALL,DATASET=mingling1/cam06 slurm/run_dante.sbatch
 ```
 
 ## Result Aggregation
@@ -331,6 +353,8 @@ DANTE-master/datasets/build_dataset.py       DANTE fold pickle generation
 DANTE-master/deep_fformation/dante_paths.py  DANTE data and experiment root resolution
 DANTE-master/deep_fformation/run_models.py   DANTE training entrypoint
 DANTE-master/deep_fformation/utils.py        DANTE model, training loop, output layout
+slurm/submit_dante.sh                        DANTE submission, camera number -> dataset
+slurm/run_dante.sbatch                       DANTE job array, one task per fold
 ```
 
 ## Repository Policy

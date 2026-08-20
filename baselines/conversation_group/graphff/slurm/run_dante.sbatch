@@ -1,41 +1,39 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=dante-mingling-f0
+#SBATCH --job-name=dante
+#SBATCH --array=0-4
 #SBATCH --partition=all
-#SBATCH --time=16:00:00
+#SBATCH --time=32:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
-#SBATCH --mem=32G
-#SBATCH --cpus-per-task=2
-#SBATCH --output=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A.out
-#SBATCH --error=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A.err
+#SBATCH --mem=64G
+#SBATCH --cpus-per-task=8
+#SBATCH --output=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.out
+#SBATCH --error=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.err
 #
-# Note: Slurm does not expand environment variables in #SBATCH directives, so the
-# log directory above is a literal. Override it per submission with an explicit
-# `sbatch --output=... --error=...`, which takes precedence. The directory must
-# already exist at submit time or Slurm rejects the job.
+# One DANTE camera, one array task per fold. Normally submitted through
+# slurm/submit_dante.sh, which resolves the camera number, sets GPU/CPU
+# resources, and creates the log directory. Direct use:
 #
-# Usage:
-#   sbatch --export=ALL,DATASET=mingling1/cam06,FOLD=0 slurm/run_dante_mingling_fold.sbatch
-#   sbatch --export=ALL,DATASET=mingling2/cam01,FOLD=0 slurm/run_dante_mingling_fold.sbatch
+#   sbatch --export=ALL,DATASET=mingling1/cam06 slurm/run_dante.sbatch
+#   sbatch --array=2-2 --export=ALL,DATASET=mingling1/cam06 slurm/run_dante.sbatch
 #
-# Optional overrides:
-#   APPTAINER_IMAGE=/path/to/image.sif
-#     Default: $PROJECT_ROOT/apptainer/deep_fformation_dante.sif
-#   DATASET=mingling1/cam06 or mingling2/cam01
-#   FOLD=0
+# The defaults above are the CPU profile. submit_dante.sh overrides --gres,
+# --mem, --cpus-per-task and --time when USE_GPU=1. The #SBATCH log directory is
+# a literal because Slurm does not expand variables in these directives; it must
+# exist at submit time, and an explicit `sbatch --output=` overrides it.
+#
+# The fold comes from the array index. Do NOT pass FOLD to select a single fold,
+# it would apply to every task; narrow the array instead (--array=2-2).
+#
+# Environment overrides:
 #   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/$DATASET/fold_$FOLD
 #   OVERWRITE=1          # 0 refuses to run when that fold directory already exists
-#   DANTE_DATA_ROOT=/path/to/DANTE      # read-only benchmark artifacts
+#   USE_GPU=0            # 1 runs TensorFlow on a GPU (needs --gres=gpu:1 too)
+#   DANTE_DATA_ROOT=/path/to/DANTE
 #   DANTE_EXPERIMENT_ROOT=/path/to/experiments
-#   EPOCHS=600
-#   BATCH_SIZE=1024
-#   PATIENCE=50
-#   MIN_DELTA=0.0
-#   F1_EVAL_EVERY=10     # 0 disables epoch-end F1; final test F1 still runs
-#   NO_POINTNET=0
-#   SYMMETRIC=0
-#   DANTE_USE_GPU=1
+#   EPOCHS=600  BATCH_SIZE=1024  PATIENCE=50  MIN_DELTA=0.0  F1_EVAL_EVERY=10
+#   NO_POINTNET=0  SYMMETRIC=0
+#   APPTAINER_IMAGE=/path/to/image.sif
 #   DANTE_PYTHON_BIN=/path/to/python-inside-container
 
 set -euo pipefail
@@ -51,8 +49,9 @@ fi
 
 APPTAINER_IMAGE="${APPTAINER_IMAGE:-$PROJECT_ROOT/apptainer/deep_fformation_dante.sif}"
 
+# the fold is the array index; FOLD is only a fallback for non-array use
+FOLD="${SLURM_ARRAY_TASK_ID:-${FOLD:-0}}"
 DATASET="${DATASET:-mingling1/cam06}"
-FOLD="${FOLD:-0}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
@@ -64,7 +63,7 @@ MIN_DELTA="${MIN_DELTA:-0.0}"
 F1_EVAL_EVERY="${F1_EVAL_EVERY:-10}"
 NO_POINTNET="${NO_POINTNET:-0}"
 SYMMETRIC="${SYMMETRIC:-0}"
-DANTE_USE_GPU="${DANTE_USE_GPU:-1}"
+DANTE_USE_GPU="${USE_GPU:-${DANTE_USE_GPU:-0}}"
 DANTE_PYTHON_BIN="${DANTE_PYTHON_BIN:-}"
 CACHE_ROOT="${CACHE_ROOT:-$PROJECT_ROOT/logs/cache}"
 RUNTIME_TMP_ROOT="${RUNTIME_TMP_ROOT:-/tmp/dante_${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}_$$}"
@@ -119,7 +118,7 @@ FOLD_LOG="$DATASET_LOG_DIR/fold_${FOLD}.log"
 # Apptainer needs both bind sources to exist on the host before the exec.
 mkdir -p "$DANTE_EXPERIMENT_ROOT" "$DATASET_LOG_DIR"
 
-echo "HOST=$(hostname) JOB=${SLURM_JOB_ID:-NA}"
+echo "HOST=$(hostname) JOB=${SLURM_JOB_ID:-NA} ARRAY=${SLURM_ARRAY_JOB_ID:-NA}_${SLURM_ARRAY_TASK_ID:-NA}"
 echo "project_root=$PROJECT_ROOT"
 echo "apptainer_image=$APPTAINER_IMAGE"
 echo "dante_root=$DANTE_ROOT"
@@ -176,7 +175,7 @@ if [[ "$DANTE_USE_GPU" == "1" ]]; then
 elif [[ "$DANTE_USE_GPU" == "0" ]]; then
   apptainer_env_args+=(--env CUDA_VISIBLE_DEVICES="")
 else
-  echo "[ERROR] DANTE_USE_GPU must be 0 or 1, got: $DANTE_USE_GPU" >&2
+  echo "[ERROR] USE_GPU must be 0 or 1, got: $DANTE_USE_GPU" >&2
   exit 2
 fi
 if [[ "$DANTE_USE_GPU" == "1" && -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
