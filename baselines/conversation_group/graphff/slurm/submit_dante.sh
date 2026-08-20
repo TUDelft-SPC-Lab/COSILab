@@ -2,21 +2,23 @@
 # Submit DANTE Mingling benchmark jobs.
 #
 # Usage:
-#   bash slurm/submit_dante.sh <cam> [fold]
+#   bash slurm/submit_dante.sh --cam=<cam> [--fold=<n>]
 #
-#   <cam>   6 | 06 | 8 | 08 | 10 | 1 | 01 | 3 | 03 | cam06 | all
-#           The Mingling session is derived from the camera number:
-#             06, 08, 10 -> mingling1
-#             01, 03     -> mingling2
-#   [fold]  optional single fold 0-4; omit to run all five
+#   --cam=<cam>   required. 06 | 08 | 10 | 01 | 03 | all
+#                 Unpadded numbers are zero-padded, so --cam=6 means --cam=06.
+#                 A cam06 form is accepted too. The Mingling session is derived
+#                 from the camera number:
+#                   06, 08, 10 -> mingling1
+#                   01, 03     -> mingling2
+#   --fold=<n>    optional single fold 0-4; omit to run all five
 #
 # Examples:
-#   bash slurm/submit_dante.sh 6            # cam06, all 5 folds
-#   bash slurm/submit_dante.sh all          # all 5 cameras, 25 tasks
-#   bash slurm/submit_dante.sh 6 2          # cam06, fold 2 only
-#   DRY_RUN=1 bash slurm/submit_dante.sh all
-#   USE_GPU=1 bash slurm/submit_dante.sh 6
-#   RUN_ID=2 bash slurm/submit_dante.sh all
+#   bash slurm/submit_dante.sh --cam=06              # cam06, all 5 folds
+#   bash slurm/submit_dante.sh --cam=all             # all 5 cameras, 25 tasks
+#   bash slurm/submit_dante.sh --cam=06 --fold=2     # cam06, fold 2 only
+#   DRY_RUN=1 bash slurm/submit_dante.sh --cam=all
+#   USE_GPU=1 bash slurm/submit_dante.sh --cam=06
+#   RUN_ID=2 bash slurm/submit_dante.sh --cam=all
 #
 # Environment overrides:
 #   RUN_ID=1                  output goes to <exp_root>/exp_$RUN_ID/...
@@ -48,8 +50,9 @@ USE_GPU="${USE_GPU:-0}"
 
 ALL_CAMS=(06 08 10 01 03)
 
+# print the header comment block, so help text and the file never drift apart
 usage() {
-  sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "${BASH_SOURCE[0]}"
   exit "${1:-2}"
 }
 
@@ -67,10 +70,31 @@ resolve_dataset() {
 }
 
 [[ $# -ge 1 ]] || usage
-case "${1:-}" in -h|--help|help) usage 0 ;; esac
 
-CAM_ARG="$1"
-FOLD_ARG="${2:-}"
+CAM_ARG=""
+FOLD_ARG=""
+
+require_value() {
+  # $1 = flag name, $2 = remaining arg count
+  [[ "$2" -ge 2 ]] || { echo "[ERROR] $1 requires a value, e.g. $1=06" >&2; exit 2; }
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cam=*)   CAM_ARG="${1#*=}"; shift ;;
+    --cam)     require_value --cam $#; CAM_ARG="$2"; shift 2 ;;
+    --fold=*)  FOLD_ARG="${1#*=}"; shift ;;
+    --fold)    require_value --fold $#; FOLD_ARG="$2"; shift 2 ;;
+    -h|--help|help) usage 0 ;;
+    --) shift; break ;;
+    -*) echo "[ERROR] unknown option: $1" >&2; usage 2 ;;
+    *)  echo "[ERROR] unexpected positional argument: $1" >&2
+        echo "        arguments are named, e.g. --cam=06 --fold=2" >&2
+        usage 2 ;;
+  esac
+done
+
+[[ -n "$CAM_ARG" ]] || { echo "[ERROR] --cam is required, e.g. --cam=06 or --cam=all" >&2; usage 2; }
 
 if [[ -n "$FOLD_ARG" ]]; then
   [[ "$FOLD_ARG" =~ ^[0-4]$ ]] || { echo "[ERROR] fold must be 0-4, got: $FOLD_ARG" >&2; exit 2; }

@@ -69,19 +69,19 @@ Run one five-fold camera job. The camera number selects the Mingling session
 (06, 08, 10 are mingling1; 01, 03 are mingling2):
 
 ```bash
-bash slurm/submit_dante.sh 6
+bash slurm/submit_dante.sh --cam=06
 ```
 
 Run all reported DANTE cameras:
 
 ```bash
-bash slurm/submit_dante.sh all
+bash slurm/submit_dante.sh --cam=all
 ```
 
 DANTE runs on CPU by default. Request the GPU profile with:
 
 ```bash
-USE_GPU=1 bash slurm/submit_dante.sh 6
+USE_GPU=1 bash slurm/submit_dante.sh --cam=06
 ```
 
 If TensorFlow 1.14 is incompatible with the available GPU runtime, stay on the

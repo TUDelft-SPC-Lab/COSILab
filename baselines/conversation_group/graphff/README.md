@@ -260,24 +260,26 @@ never type it:
 ```
 
 ```bash
-bash slurm/submit_dante.sh 6          # cam06, all 5 folds
-bash slurm/submit_dante.sh all        # all 5 cameras, 25 tasks
-bash slurm/submit_dante.sh 6 2        # cam06, fold 2 only
-bash slurm/submit_dante.sh 10         # cam10 (mingling1)
-bash slurm/submit_dante.sh 1          # cam01 (mingling2)
+bash slurm/submit_dante.sh --cam=06            # cam06, all 5 folds
+bash slurm/submit_dante.sh --cam=all           # all 5 cameras, 25 tasks
+bash slurm/submit_dante.sh --cam=06 --fold=2   # cam06, fold 2 only
+bash slurm/submit_dante.sh --cam=10            # cam10 (mingling1)
+bash slurm/submit_dante.sh --cam=01            # cam01 (mingling2)
 ```
 
-Numbers are zero-padded before lookup, so `6` and `06` are the same camera, and
-`1` (cam01) stays distinct from `10` (cam10). `cam06` is accepted too.
+`--cam` is required, `--fold` is optional and defaults to all five. Numbers are
+zero-padded before lookup, so `--cam=6` and `--cam=06` are the same camera, and
+`--cam=1` (cam01) stays distinct from `--cam=10` (cam10). A `--cam=cam06` form is
+accepted too. Run `bash slurm/submit_dante.sh --help` for the full list.
 
 Common overrides:
 
 ```bash
-DRY_RUN=1  bash slurm/submit_dante.sh all    # print the sbatch lines, submit nothing
-USE_GPU=1  bash slurm/submit_dante.sh 6      # GPU profile instead of CPU
-RUN_ID=2   bash slurm/submit_dante.sh all    # write to exp_2 instead of exp_1
-OVERWRITE=0 bash slurm/submit_dante.sh 6     # refuse if the fold already exists
-EXTRA_EXPORTS='EPOCHS=300,PATIENCE=30' bash slurm/submit_dante.sh 6
+DRY_RUN=1   bash slurm/submit_dante.sh --cam=all   # print sbatch lines, submit nothing
+USE_GPU=1   bash slurm/submit_dante.sh --cam=06    # GPU profile instead of CPU
+RUN_ID=2    bash slurm/submit_dante.sh --cam=all   # write to exp_2 instead of exp_1
+OVERWRITE=0 bash slurm/submit_dante.sh --cam=06    # refuse if the fold already exists
+EXTRA_EXPORTS='EPOCHS=300,PATIENCE=30' bash slurm/submit_dante.sh --cam=06
 ```
 
 The submit script resolves the camera, validates the data files before
