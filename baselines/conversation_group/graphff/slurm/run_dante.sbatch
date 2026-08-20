@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=dante
 #SBATCH --array=0-4
-#SBATCH --partition=insy,all
+#SBATCH --qos=medium
+#SBATCH --partition=insy,general
 #SBATCH --time=32:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
