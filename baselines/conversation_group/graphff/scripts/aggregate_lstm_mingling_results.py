@@ -5,9 +5,14 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+# reuse the root defaults rather than duplicating them
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from graphff_paths import get_experiment_root, get_run_id  # noqa: E402
 
 
 EXPECTED_CAMERAS = {
@@ -30,10 +35,29 @@ def parse_args() -> argparse.Namespace:
         description="Aggregate LSTM Mingling metrics_summary CSV files."
     )
     parser.add_argument(
-        "--output-root",
-        default="output",
+        "--models-root",
+        default=get_experiment_root(),
         type=Path,
-        help="Root directory containing mingling*_cam*/ outputs.",
+        help="LSTM experiment root containing exp_*/mingling*/cam*/fold_* outputs "
+             "(default from GRAPHFF_EXPERIMENT_ROOT).",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=get_run_id(),
+        help="which experiment to aggregate, i.e. exp_<run-id> (default from RUN_ID, else 1). "
+             "Use --all-runs to aggregate every experiment under the root.",
+    )
+    parser.add_argument(
+        "--all-runs",
+        action="store_true",
+        help="aggregate every exp_* under the root. Folds repeated across experiments "
+             "are reported as duplicates.",
+    )
+    parser.add_argument(
+        "--output-root",
+        default=Path("output"),
+        type=Path,
+        help="Directory where aggregate CSV files are written.",
     )
     parser.add_argument(
         "--out-prefix",
@@ -56,21 +80,27 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_file(path: Path) -> pd.DataFrame:
-    match = re.search(
-        r"dataset_(mingling[12])_(cam\d+)_fold=(\d+)_metrics_summary_.*_stride=(\d+)\.csv$",
-        path.name,
+    # run id, session, camera and fold come from the directory layout; the frame
+    # stride is only recorded in the filename
+    path_match = re.search(
+        r"/exp_([^/]+)/(mingling[12])/(cam\d+)/fold_(\d+)/[^/]+\.csv$",
+        path.as_posix(),
     )
-    if not match:
-        raise ValueError(f"Unexpected metrics filename: {path}")
+    if not path_match:
+        raise ValueError(f"Unexpected metrics path: {path}")
+    run_id, session, camera, fold = path_match.groups()
 
-    session, camera, fold, stride = match.groups()
+    name_match = re.search(r"_stride=(\d+)\.csv$", path.name)
+    stride = int(name_match.group(1)) if name_match else 1
+
     df = pd.read_csv(path)
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
     df.insert(0, "pipeline", "LSTM")
     df.insert(1, "session", session)
     df.insert(2, "camera", camera)
     df.insert(3, "fold", int(fold))
-    df.insert(4, "frame_stride", int(stride))
+    df.insert(4, "run_id", run_id)
+    df.insert(5, "frame_stride", stride)
     df["source_file"] = str(path)
     return df
 
@@ -128,9 +158,17 @@ def validate_inputs(df: pd.DataFrame, allow_incomplete: bool, excluded: set[tupl
 
 def main() -> None:
     args = parse_args()
-    files = sorted(args.output_root.glob("mingling*_cam*/*metrics_summary*.csv"))
+    experiment_glob = "exp_*" if args.all_runs else "exp_" + str(args.run_id)
+    search_root = args.models_root / experiment_glob
+    files = sorted(args.models_root.glob(
+        experiment_glob + "/mingling*/cam*/fold_*/*metrics_summary*.csv"))
     if not files:
-        raise SystemExit(f"No metrics_summary CSV files found under {args.output_root}")
+        raise SystemExit(
+            f"No metrics_summary CSV files found under {search_root}\n"
+            "Check --models-root / GRAPHFF_EXPERIMENT_ROOT, and --run-id "
+            "(or pass --all-runs to search every experiment)."
+        )
+    print(f"aggregating {len(files)} fold summaries from {search_root}")
 
     excluded = set()
     for value in args.exclude_camera:
@@ -151,6 +189,7 @@ def main() -> None:
     validate_inputs(long_df, args.allow_incomplete, excluded)
 
     out_root = args.output_root
+    out_root.mkdir(parents=True, exist_ok=True)
     long_path = out_root / f"{args.out_prefix}_metrics_long.csv"
     camera_path = out_root / f"{args.out_prefix}_metrics_by_camera.csv"
     session_path = out_root / f"{args.out_prefix}_metrics_by_session.csv"

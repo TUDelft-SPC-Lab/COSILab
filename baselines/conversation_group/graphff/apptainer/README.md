@@ -67,18 +67,21 @@ apptainer exec --nv "$SIF" \
 
 ## LSTM/GraphFF Slurm Example
 
-Run one five-fold camera job:
+Run one five-fold camera job. The camera number selects the Mingling session
+(06, 08, 10 are mingling1; 01, 03 are mingling2):
 
 ```bash
-sbatch --export=ALL,DATASET=mingling1/cam06,TRAIN=1,DATASET_MAKE=1,FRAME_STRIDE=20 \
-  slurm/run_vitpose_dataframe_5fold.sbatch
+bash slurm/submit_lstm.sh --cam=06
 ```
 
 Run all reported LSTM/GraphFF cameras:
 
 ```bash
-bash slurm/submit_lstm_mingling_all.sh
+bash slurm/submit_lstm.sh --cam=all
 ```
+
+This pipeline is GPU-only and asserts `torch.cuda.is_available()` inside the
+container.
 
 ## DANTE Slurm Example
 

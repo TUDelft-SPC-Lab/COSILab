@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import graphff_paths
+
 
 DEFAULT_MINGLING_FRAME_STRIDE = 20
 
@@ -16,7 +18,8 @@ def is_mingling_dataset(dataset_path):
 
 
 def get_dataset_data_dir(dataset_path):
-	return str(Path("data") / dataset_path)
+	# resolves under GRAPHFF_DATA_ROOT; see graphff_paths for the default
+	return str(graphff_paths.dataset_dir(dataset_path))
 
 
 def get_dataset_label(dataset_path):

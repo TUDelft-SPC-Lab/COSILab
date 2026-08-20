@@ -120,9 +120,42 @@ See `apptainer/README.md` for build and HPC usage details.
 
 ## LSTM / GraphFF
 
-Run one local fold from the repository root:
+### Paths
+
+Same shape as DANTE: two roots, both environment variables with cluster defaults.
+
+| Variable | Default |
+| --- | --- |
+| `GRAPHFF_DATA_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/LSTM` |
+| `GRAPHFF_EXPERIMENT_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/LSTM/experiments` |
+
+```text
+$GRAPHFF_DATA_ROOT/mingling1/cam06/
+  features.csv  GT.csv  group_names.txt  scene_continuity.csv
+
+$GRAPHFF_EXPERIMENT_ROOT/
+  exp_1/                       # RUN_ID, default 1
+    mingling1/cam06/
+      fold_0/                  # metrics, AUC, f1 tables, loss curve, model, scene pickle
+      fold_1/ ... fold_4/
+      logs/fold_0.log ...
+  _cache/                      # split tensors for GRAPHFF_DATASET_MAKE=0
+    mingling1/cam06/
+```
+
+Re-running with the same `RUN_ID` replaces a fold in place (the default); set
+`GRAPHFF_OVERWRITE=0` / `OVERWRITE=0` to refuse instead. The check happens before
+any data is read, so a refusal costs nothing.
+
+The `_cache` tree sits outside `exp_*` deliberately: the cached splits depend only
+on the dataset, frame stride and sequence length, so they are shared across runs
+and survive an overwrite, which keeps `GRAPHFF_DATASET_MAKE=0` useful.
+
+### Running one fold locally
 
 ```bash
+GRAPHFF_DATA_ROOT=/path/to/LSTM \
+GRAPHFF_EXPERIMENT_ROOT=/path/to/experiments \
 GRAPHFF_DATASET=mingling1/cam06 \
 GRAPHFF_TRAIN=1 \
 GRAPHFF_DATASET_MAKE=1 \
@@ -143,18 +176,24 @@ GRAPHFF_PATIENCE=50
 GRAPHFF_F1_EVAL_EVERY=10
 ```
 
-Submit one 5-fold camera run on Slurm:
+### Submitting on Slurm
+
+Same entry-point style as DANTE — a camera number, optionally a fold:
 
 ```bash
-sbatch --export=ALL,DATASET=mingling2/cam01,TRAIN=1,DATASET_MAKE=1,FRAME_STRIDE=20 \
-  slurm/run_vitpose_dataframe_5fold.sbatch
+bash slurm/submit_lstm.sh --cam=06            # cam06, all 5 folds
+bash slurm/submit_lstm.sh --cam=all           # all 5 cameras, 25 tasks
+bash slurm/submit_lstm.sh --cam=06 --fold=2   # cam06, fold 2 only
+DRY_RUN=1 bash slurm/submit_lstm.sh --cam=all
+RUN_ID=2  bash slurm/submit_lstm.sh --cam=all
 ```
 
-Submit all reported LSTM/GraphFF cameras:
+Unlike DANTE, this pipeline is **GPU-only**: the job asserts
+`torch.cuda.is_available()` inside the container and fails the task if no GPU is
+visible. `EXCLUDE_NODES` defaults to `gpu[36-45]`; set it empty to disable.
 
-```bash
-bash slurm/submit_lstm_mingling_all.sh
-```
+Slurm stdout/stderr goes to `/home/nfs/zli33/slurm_outputs/lstm`, overridable with
+`SLURM_LOG_DIR`.
 
 ## DANTE
 
@@ -340,6 +379,7 @@ restored best-validation-MSE weights.
 
 ```text
 main_parallel.py                              LSTM/GraphFF one-fold entrypoint
+graphff_paths.py                             LSTM data and experiment root resolution
 dataset_registry.py                          Supported Mingling cameras
 data.py                                      LSTM/GraphFF data loading and splitting
 model.py                                     LSTM pairwise affinity model
@@ -355,6 +395,8 @@ DANTE-master/datasets/build_dataset.py       DANTE fold pickle generation
 DANTE-master/deep_fformation/dante_paths.py  DANTE data and experiment root resolution
 DANTE-master/deep_fformation/run_models.py   DANTE training entrypoint
 DANTE-master/deep_fformation/utils.py        DANTE model, training loop, output layout
+slurm/submit_lstm.sh                         LSTM submission, camera number -> dataset
+slurm/run_lstm.sbatch                        LSTM job array, one task per fold
 slurm/submit_dante.sh                        DANTE submission, camera number -> dataset
 slurm/run_dante.sbatch                       DANTE job array, one task per fold
 ```

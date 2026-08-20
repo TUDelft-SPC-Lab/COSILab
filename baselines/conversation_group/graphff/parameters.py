@@ -1,5 +1,6 @@
 import os
 import torch
+import graphff_paths
 from utils import get_train_val_test_scenes
 from dataset_registry import get_dataset_config, get_dataset_frame_stride, get_dataset_label
 
@@ -56,8 +57,13 @@ threshold = _get_env_float('GRAPHFF_THRESHOLD', 1.0)
 
 # ----------- fold parameters -----------
 
+# ----------- run identity -----------
+# output goes to <experiment_root>/exp_<run_id>/<dataset>/fold_<fold>.
+# overwrite=True replaces an existing fold directory; False refuses to run.
+run_id = os.environ.get('RUN_ID', graphff_paths.DEFAULT_RUN_ID)
+overwrite = _get_env_bool('GRAPHFF_OVERWRITE', True)
+
 # ----------- result filename -----------
-output_dir = os.environ.get('GRAPHFF_OUTPUT_DIR', 'output')
 loss_path = 'loss_curve'
 AUC_path = 'AUC'
 f1_path = 'f1'

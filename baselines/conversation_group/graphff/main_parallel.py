@@ -2,9 +2,11 @@ import torch
 import numpy as np
 import pandas as pd
 import os
+import shutil
 import sys
 import pickle
 
+import graphff_paths
 from parameters import *
 from data import *
 from model import *
@@ -36,22 +38,48 @@ print('early_stop_patience:', early_stop_patience)
 print('early_stop_min_delta:', early_stop_min_delta)
 print('f1_eval_every:', f1_eval_every)
 
-scenes_per_fold, num_folds= get_train_val_test_scenes(dataset_path)
-
-
 # override path suffix for output file names
 path_suffix += '_seq='+str(seq_len) + '_hidden='+str(hidden_dim)+'_threshold='+str(threshold)
 if frame_stride != 1:
 	path_suffix += '_stride='+str(frame_stride)
 print('path_suffix :', path_suffix, '\n')
-dataset_artifact_prefix = 'dataset=' + dataset_label
+# seq_len is part of the key: the cached tensors are windowed at that length, so
+# reusing them across different seq_len values would load mismatched shapes
+dataset_artifact_prefix = 'dataset=' + dataset_label + '_seq=' + str(seq_len)
 if frame_stride != 1:
 	dataset_artifact_prefix += '_stride=' + str(frame_stride)
+
+# one directory per fold, fully determined by (dataset, run_id, fold)
+output_dir = str(graphff_paths.fold_output_dir(dataset_path, run_id, fold))
+# cached splits live outside the experiment tree: they depend only on the
+# dataset, stride and seq_len, so they are reused across runs and survive
+# an overwrite
+model_dir = str(graphff_paths.cache_dir(dataset_path))
+
+print('data root       :', graphff_paths.get_data_root())
+print('experiment root :', graphff_paths.get_experiment_root())
+print('run_id          :', run_id)
+print('overwrite       :', overwrite)
+print('fold output dir :', output_dir)
+print('cache dir       :', model_dir)
+
+# checked up front so a refusal costs nothing rather than surfacing after training
+if os.path.isdir(output_dir):
+	if not overwrite:
+		raise SystemExit(
+			"[ERROR] fold output already exists: " + output_dir + "\n"
+			"Set GRAPHFF_OVERWRITE=1 to replace it, or pass a different RUN_ID "
+			"to write a separate run."
+		)
+	print('replacing existing fold output at ' + output_dir)
+	shutil.rmtree(output_dir)
+os.makedirs(output_dir)
+
+scenes_per_fold, num_folds = get_train_val_test_scenes(dataset_path)
 
 
 print("\n----------- DATA PREPROCESS -----------\n")
 
-model_dir = os.path.join('models', dataset_path)
 os.makedirs(model_dir, exist_ok=True)
 
 if (dataset_make_flag == True):
@@ -243,9 +271,6 @@ print("\n----------- EVALUATION -----------\n")
 
 # build time and group names GT map
 gt_groups_at_time = process_scene_gt(dataset_path)
-
-# create output dir
-os.makedirs(output_dir,exist_ok=True)
 
 # compute AUC score
 train_AUC = evaluate_AUC_score(skynet, train_set, 'train')
