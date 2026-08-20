@@ -137,7 +137,20 @@ if [[ -n "${SBATCH_ARGS:-}" ]]; then
 fi
 
 # Slurm rejects a job outright if the --output directory does not already exist.
-mkdir -p "$SLURM_LOG_DIR"
+# Normally it is already there, so only try to create it when it is missing, and
+# say something useful rather than leaking a raw mkdir error when we cannot.
+if [[ ! -d "$SLURM_LOG_DIR" ]]; then
+  if mkdir -p "$SLURM_LOG_DIR" 2>/dev/null; then
+    echo "created slurm log dir: $SLURM_LOG_DIR"
+  elif [[ "${DRY_RUN:-0}" == "1" ]]; then
+    echo "[WARN] slurm log dir is missing and not creatable here: $SLURM_LOG_DIR" >&2
+    echo "       harmless for a dry run; it must exist before a real submission." >&2
+  else
+    echo "[ERROR] slurm log dir does not exist and could not be created: $SLURM_LOG_DIR" >&2
+    echo "        Create it on the cluster, or set SLURM_LOG_DIR to a writable path." >&2
+    exit 2
+  fi
+fi
 
 echo "data root:       $DANTE_DATA_ROOT"
 echo "experiment root: $DANTE_EXPERIMENT_ROOT/exp_$RUN_ID"
