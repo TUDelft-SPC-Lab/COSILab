@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
+#SBATCH --mem=16G
 #SBATCH --cpus-per-task=2
 #SBATCH --output=/home/nfs/zli33/slurm_outputs/lstm/slurm-%x-%A_%a.out
 #SBATCH --error=/home/nfs/zli33/slurm_outputs/lstm/slurm-%x-%A_%a.err
