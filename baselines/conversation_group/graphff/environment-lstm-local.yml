@@ -1,0 +1,48 @@
+# Minimal conda environment for running the LSTM/GraphFF pipeline locally,
+# without the Apptainer container.
+#
+#   conda env create -f environment-lstm-local.yml --solver=libmamba
+#   CONDA_ENV=graphff-lstm bash scripts/train_lstm_local.sh --cam=06 --fold=0
+#
+# Use --solver=libmamba. Pinning python 3.7.1 alongside pytorch 1.10.1 gives the
+# classic solver a very large search space; it was still running after 10 minutes
+# here. (conda >= 23.10 defaults to libmamba, older versions need the flag or
+# `conda config --set solver libmamba`.)
+#
+# Versions match the py371 environment inside apptainer/deep_fformation.def, so
+# local numbers are comparable with cluster numbers. The pipeline only needs
+# torch, numpy, pandas, scikit-learn and matplotlib -- scipy arrives via
+# scikit-learn. Nothing here needs a GPU: main_parallel.py falls back to CPU.
+#
+# If this pins too tightly for your platform (python 3.7 is end-of-life and the
+# osx-arm64 builds do not exist), a modern environment also works:
+#
+#   conda create -n graphff-lstm python=3.11 pytorch numpy pandas scikit-learn matplotlib -c pytorch -c conda-forge
+#
+# The code is version-tolerant; it was verified end to end on torch 2.3.1 /
+# python 3.11 as well as the pinned set below.
+
+name: graphff-lstm
+
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.7.1
+  # resolves to the cuda11.3 build (py3.7_cuda11.3_cudnn8.2.0_0), which supports
+  # Ampere sm_80/sm_86 -- unlike the DANTE env, pinned to cudatoolkit=10.0 and
+  # therefore capped at sm_75. Verify what your built .sif actually contains:
+  #   apptainer exec <sif> /opt/conda/envs/py371/bin/python -c \
+  #     "import torch; print(torch.version.cuda, torch.cuda.get_arch_list())"
+  - pytorch=1.10.1
+  - numpy=1.20.3
+  - pandas=1.3.5
+  - scikit-learn=0.23.2
+  - scipy=1.7.3
+  - matplotlib=3.5.0
+  # conda's own libstdc++, so the interpreter never falls back to a system one
+  # that is too old -- the GLIBCXX_3.4.26 error seen inside the Ubuntu 18.04
+  # container comes from exactly that fallback
+  - libstdcxx-ng>=9

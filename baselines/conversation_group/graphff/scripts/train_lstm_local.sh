@@ -11,16 +11,18 @@
 # Everything lives under one local directory (LOCAL_ROOT, default COSILab/data):
 #
 #   $LOCAL_ROOT/LSTM/mingling1/cam06/{features,GT}.csv ...   input
-#   $LOCAL_ROOT/deep_fformation_dante.sif                    optional container
 #   $LOCAL_ROOT/experiments/exp_<RUN_ID>/...                 output
 #
 # If $LOCAL_ROOT/LSTM is absent but $LOCAL_ROOT/mingling1 exists, LOCAL_ROOT is
 # used as the data root directly.
 #
-# The container is used when the .sif and the apptainer command are both present;
-# otherwise the script falls back to a local Python that can import torch. Either
-# way training runs on CPU unless a CUDA GPU is visible -- unlike the Slurm job,
-# this script does not require one.
+# Runs natively by default -- no container needed. Any Python that can import
+# torch works (PYTHON=..., or CONDA_ENV=... for a named conda env). Set
+# USE_CONTAINER=1 to require $LOCAL_ROOT/deep_fformation_dante.sif instead, or
+# USE_CONTAINER=auto to use it only when it and apptainer are both present.
+#
+# Training runs on CPU unless a CUDA GPU is visible -- unlike the Slurm job, this
+# script does not require one.
 #
 # Examples:
 #   bash scripts/train_lstm_local.sh --cam=06 --fold=0
@@ -37,8 +39,12 @@
 #   LOCAL_ROOT=...       root holding input, sif and output (default COSILab/data)
 #   RUN_ID=1             output goes to $LOCAL_ROOT/experiments/exp_$RUN_ID/...
 #   OVERWRITE=1          0 refuses to run when a fold directory already exists
-#   PYTHON=python3       interpreter for the no-container fallback
-#   USE_CONTAINER=auto   auto | 1 | 0
+#   CONDA_ENV=name       use that conda env's python (implies USE_CONTAINER=0).
+#                        Create it with:
+#                          conda env create -f environment-lstm-local.yml
+#   PYTHON=python3       interpreter used to run training
+#   USE_CONTAINER=0      0 (default, run natively) | 1 (require the container)
+#                        | auto (use it only if the .sif and apptainer exist)
 #   DRY_RUN=0            1 prints what would run
 #   NUM_EPOCHS=600  BATCH_SIZE=128  LR=0.001  PATIENCE=50  MIN_DELTA=0.0
 #   SEQ_LEN=10  FRAME_STRIDE=20  HIDDEN_DIM=8  THRESHOLD=1.0
@@ -55,7 +61,7 @@ LOCAL_ROOT="${LOCAL_ROOT:-$(cd "$PROJECT_ROOT/../../.." && pwd)/data}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 PYTHON="${PYTHON:-python3}"
-USE_CONTAINER="${USE_CONTAINER:-auto}"
+USE_CONTAINER="${USE_CONTAINER:-0}"
 TRAIN="${TRAIN:-1}"
 DATASET_MAKE="${DATASET_MAKE:-1}"
 SEQ_LEN="${SEQ_LEN:-10}"
@@ -162,6 +168,22 @@ for dataset in "${DATASETS[@]}"; do
 done
 
 # ------------------------- pick how to run python -------------------------
+# a named conda env takes precedence and means "no container"
+if [[ -n "${CONDA_ENV:-}" ]]; then
+  if ! command -v conda >/dev/null 2>&1; then
+    echo "[ERROR] CONDA_ENV=$CONDA_ENV but conda is not on PATH" >&2; exit 2
+  fi
+  conda_base="$(conda info --base 2>/dev/null)" || {
+    echo "[ERROR] could not determine the conda base directory" >&2; exit 2; }
+  conda_python="$conda_base/envs/$CONDA_ENV/bin/python"
+  [[ -x "$conda_python" ]] || {
+    echo "[ERROR] conda env '$CONDA_ENV' has no python at $conda_python" >&2
+    echo "        create it with: conda env create -f environment-lstm-local.yml" >&2
+    exit 2; }
+  PYTHON="$conda_python"
+  USE_CONTAINER=0
+fi
+
 RUNNER=""
 if [[ "$USE_CONTAINER" != "0" ]] && [[ -f "$APPTAINER_IMAGE" ]] && command -v apptainer >/dev/null 2>&1; then
   RUNNER="container"
@@ -224,20 +246,29 @@ run_fold() {
     "GRAPHFF_F1_EVAL_EVERY=$F1_EVAL_EVERY"
     "GRAPHFF_DETECT_ANOMALY=$DETECT_ANOMALY"
   )
+  # The image's %environment sets PATH but not LD_LIBRARY_PATH, and calling the
+  # env's python directly skips conda activation. Without this the loader falls
+  # back to the container's Ubuntu 18.04 libstdc++ (GLIBCXX <= 3.4.25) and scipy
+  # fails with "GLIBCXX_3.4.26 not found".
+  local conda_lib="/opt/conda/envs/py371/lib"
+  env_pairs+=("LD_LIBRARY_PATH=$conda_lib")
 
   echo "=== $dataset fold $fold -> $log"
+
+  local env_args=()
+  local pair
   if [[ "${DRY_RUN:-0}" == "1" ]]; then
     if [[ "$RUNNER" == "container" ]]; then
-      echo "    apptainer exec --cleanenv ${NV_ARGS[*]+${NV_ARGS[*]} }-B ... $APPTAINER_IMAGE \\"
-      echo "      /opt/conda/envs/py371/bin/python main_parallel.py $fold"
+      echo "    apptainer exec --cleanenv ${NV_ARGS[*]+${NV_ARGS[*]} }\\"
+      printf '      --env %s \\\n' "${env_pairs[@]}"
+      echo "      -B $PROJECT_ROOT:$PROJECT_ROOT -B $LOCAL_ROOT:$LOCAL_ROOT --pwd $PROJECT_ROOT \\"
+      echo "      $APPTAINER_IMAGE /opt/conda/envs/py371/bin/python main_parallel.py $fold"
     else
       echo "    (cd $PROJECT_ROOT && env ${env_pairs[*]} $PYTHON main_parallel.py $fold)"
     fi
     return 0
   fi
 
-  local env_args=()
-  local pair
   if [[ "$RUNNER" == "container" ]]; then
     for pair in "${env_pairs[@]}"; do env_args+=(--env "$pair"); done
     apptainer exec --cleanenv \

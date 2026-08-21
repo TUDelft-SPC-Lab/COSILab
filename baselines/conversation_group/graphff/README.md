@@ -213,7 +213,6 @@ and output all under one directory (`LOCAL_ROOT`, default `COSILab/data`):
 
 ```text
 $LOCAL_ROOT/LSTM/mingling1/cam06/...      input
-$LOCAL_ROOT/deep_fformation_dante.sif     optional container
 $LOCAL_ROOT/experiments/exp_<RUN_ID>/...  output, same layout as the cluster
 ```
 
@@ -224,10 +223,47 @@ NUM_EPOCHS=20 F1_EVAL_EVERY=0 bash scripts/train_lstm_local.sh --cam=06 --fold=0
 DRY_RUN=1 bash scripts/train_lstm_local.sh --cam=all
 ```
 
-It uses the container when the `.sif` and `apptainer` are both present, and
-otherwise falls back to any Python that can import torch (`PYTHON=...`). Force
-either with `USE_CONTAINER=1` / `USE_CONTAINER=0`. Unlike the Slurm job it does
-**not** require a GPU — `main_parallel.py` falls back to CPU on its own.
+It runs **natively by default** — no container required. Any Python that can
+import torch works, selected with `PYTHON=...` or `CONDA_ENV=...`. Set
+`USE_CONTAINER=1` to require `$LOCAL_ROOT/deep_fformation_dante.sif` instead, or
+`USE_CONTAINER=auto` to use it only when it and `apptainer` are both present.
+Unlike the Slurm job it does **not** require a GPU — `main_parallel.py` falls
+back to CPU on its own.
+
+#### Conda environment
+
+To run without the container, create the environment once and select it by name:
+
+```bash
+conda env create -f environment-lstm-local.yml --solver=libmamba
+CONDA_ENV=graphff-lstm bash scripts/train_lstm_local.sh --cam=06 --fold=0
+```
+
+Use `--solver=libmamba`. Pinning python 3.7.1 next to pytorch 1.10.1 gives conda's
+classic solver a very large search space — it was still running after 10 minutes,
+while libmamba resolved it in under two. conda >= 23.10 defaults to libmamba.
+
+`CONDA_ENV` implies `USE_CONTAINER=0`. The spec in
+[environment-lstm-local.yml](environment-lstm-local.yml) mirrors the container's
+`py371` environment (python 3.7.1, pytorch 1.10.1, numpy, pandas, scikit-learn,
+matplotlib) so local numbers stay comparable with cluster numbers. Python 3.7 is
+end-of-life and has no `osx-arm64` builds, so a modern environment is a fine
+substitute — the code is version-tolerant and was verified end to end on torch
+2.3.1 / python 3.11:
+
+```bash
+conda create -n graphff-lstm python=3.11 pytorch numpy pandas scikit-learn matplotlib \
+  -c pytorch -c conda-forge
+```
+
+**If the container run fails with `GLIBCXX_3.4.26 not found`** from
+`scipy/optimize/_group_columns...so`: the image's `%environment` sets `PATH` but
+not `LD_LIBRARY_PATH`, so invoking `/opt/conda/envs/py371/bin/python` directly
+skips conda activation and the loader falls back to the container's Ubuntu 18.04
+`libstdc++`, which stops at GLIBCXX 3.4.25. Both `run_lstm.sbatch` and
+`train_lstm_local.sh` now pass `LD_LIBRARY_PATH=/opt/conda/envs/py371/lib`
+explicitly, which fixes it. Setting that variable is also the one-line manual
+workaround for any other direct `apptainer exec` against this image.
 
 Measured CPU throughput is about **1000 samples/s**, which is roughly 28 s/epoch
 at 30k training samples, so a full 600-epoch fold is a few hours; early stopping

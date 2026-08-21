@@ -182,6 +182,10 @@ apptainer_env_args=(
   --env MPLCONFIGDIR="$CACHE_ROOT/mpl"
   --env CUDA_CACHE_PATH="$CACHE_ROOT/cuda"
   --env TMPDIR="$RUNTIME_TMP_ROOT"
+  # the image's %environment sets PATH but not LD_LIBRARY_PATH; without conda's
+  # own lib dir the loader falls back to the container's Ubuntu 18.04 libstdc++
+  # (GLIBCXX <= 3.4.25) and scipy fails with "GLIBCXX_3.4.26 not found"
+  --env LD_LIBRARY_PATH="/opt/conda/envs/py371/lib"
 )
 if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   apptainer_env_args+=(--env CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES")
