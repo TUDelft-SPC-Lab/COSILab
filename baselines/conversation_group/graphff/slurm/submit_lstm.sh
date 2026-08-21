@@ -29,7 +29,9 @@
 #   GRAPHFF_DATA_ROOT=...       benchmark artifacts to read
 #   GRAPHFF_EXPERIMENT_ROOT=... where runs are written
 #   SLURM_LOG_DIR=...           Slurm stdout/stderr
-#   EXCLUDE_NODES='gpu[36-45]'  set empty to disable
+#   EXCLUDE_NODES='gpu[01-05]'  opt-in node exclusion; empty by default. Node
+#                               names must exist in the target partition or
+#                               sbatch rejects the job with "Invalid node name".
 #   EXTRA_EXPORTS='NUM_EPOCHS=600,PATIENCE=50'
 #   SBATCH_ARGS='--constraint=...'
 
@@ -48,7 +50,9 @@ GRAPHFF_EXPERIMENT_ROOT="${GRAPHFF_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/
 SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/lstm}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
-EXCLUDE_NODES="${EXCLUDE_NODES-gpu[36-45]}"
+# empty by default: the old gpu[36-45] default was inherited from a previous
+# cluster layout and names nodes that do not exist in insy/general
+EXCLUDE_NODES="${EXCLUDE_NODES:-}"
 
 ALL_CAMS=(06 08 10 01 03)
 

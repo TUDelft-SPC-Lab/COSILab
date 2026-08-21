@@ -190,7 +190,9 @@ RUN_ID=2  bash slurm/submit_lstm.sh --cam=all
 
 Unlike DANTE, this pipeline is **GPU-only**: the job asserts
 `torch.cuda.is_available()` inside the container and fails the task if no GPU is
-visible. `EXCLUDE_NODES` defaults to `gpu[36-45]`; set it empty to disable.
+visible. No nodes are excluded by default; `EXCLUDE_NODES='gpu[01-02]'` is
+available if a specific node misbehaves, but the names must exist in the target
+partition or `sbatch` rejects the job with `Invalid node name specified`.
 
 Slurm stdout/stderr goes to `/home/nfs/zli33/slurm_outputs/lstm`, overridable with
 `SLURM_LOG_DIR`.
