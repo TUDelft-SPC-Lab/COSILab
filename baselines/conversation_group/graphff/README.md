@@ -18,15 +18,19 @@ This Git repository does not contain the Mingling data files. After downloading
 the external data deposit, place or symlink the benchmark files into the code
 repository before running experiments.
 
-Copy the LSTM/GraphFF data from the data deposit:
+Neither pipeline reads from the repository any more. Both resolve their input
+from an environment variable, so the deposit's `benchmark/` tree can stay
+wherever you put it:
 
 ```text
-benchmark/LSTM/mingling1/cam06/  ->  data/mingling1/cam06/
-benchmark/LSTM/mingling1/cam08/  ->  data/mingling1/cam08/
-benchmark/LSTM/mingling1/cam10/  ->  data/mingling1/cam10/
-benchmark/LSTM/mingling2/cam01/  ->  data/mingling2/cam01/
-benchmark/LSTM/mingling2/cam03/  ->  data/mingling2/cam03/
+$GRAPHFF_DATA_ROOT/mingling1/cam06/     <- benchmark/LSTM/mingling1/cam06/
+$GRAPHFF_DATA_ROOT/mingling1/cam08/
+$GRAPHFF_DATA_ROOT/mingling1/cam10/
+$GRAPHFF_DATA_ROOT/mingling2/cam01/
+$GRAPHFF_DATA_ROOT/mingling2/cam03/
 ```
+
+See the LSTM/GraphFF section below for the default and how to override it.
 
 DANTE reads its data from `$DANTE_DATA_ROOT` rather than from the repository, so
 the deposit's `benchmark/DANTE/` tree can stay where it is:
@@ -57,7 +61,7 @@ Mingling 2: cam01, cam03
 The expected data layout after downloading the external data package is:
 
 ```text
-data/                      # LSTM/GraphFF, repository-relative
+$GRAPHFF_DATA_ROOT/        # LSTM/GraphFF
   mingling1/
     cam06/
     cam08/
@@ -66,7 +70,7 @@ data/                      # LSTM/GraphFF, repository-relative
     cam01/
     cam03/
 
-$DANTE_DATA_ROOT/          # DANTE, outside the repository
+$DANTE_DATA_ROOT/          # DANTE
   mingling1/
     cam06/
     cam08/
@@ -75,6 +79,9 @@ $DANTE_DATA_ROOT/          # DANTE, outside the repository
     cam01/
     cam03/
 ```
+
+Both roots default to a shared cluster location and are overridable; running
+against a local copy is a one-variable change per pipeline.
 
 Each LSTM/GraphFF camera directory contains:
 
@@ -196,6 +203,39 @@ partition or `sbatch` rejects the job with `Invalid node name specified`.
 
 Slurm stdout/stderr goes to `/home/nfs/zli33/slurm_outputs/lstm`, overridable with
 `SLURM_LOG_DIR`.
+
+### Running locally, no Slurm
+
+The model is 522 parameters, so folds are practical on a laptop.
+[scripts/train_lstm_local.sh](scripts/train_lstm_local.sh) takes the same
+`--cam` / `--fold` arguments and runs folds sequentially, with input, container
+and output all under one directory (`LOCAL_ROOT`, default `COSILab/data`):
+
+```text
+$LOCAL_ROOT/LSTM/mingling1/cam06/...      input
+$LOCAL_ROOT/deep_fformation_dante.sif     optional container
+$LOCAL_ROOT/experiments/exp_<RUN_ID>/...  output, same layout as the cluster
+```
+
+```bash
+bash scripts/train_lstm_local.sh --cam=06 --fold=0
+bash scripts/train_lstm_local.sh --cam=06                     # all 5 folds
+NUM_EPOCHS=20 F1_EVAL_EVERY=0 bash scripts/train_lstm_local.sh --cam=06 --fold=0
+DRY_RUN=1 bash scripts/train_lstm_local.sh --cam=all
+```
+
+It uses the container when the `.sif` and `apptainer` are both present, and
+otherwise falls back to any Python that can import torch (`PYTHON=...`). Force
+either with `USE_CONTAINER=1` / `USE_CONTAINER=0`. Unlike the Slurm job it does
+**not** require a GPU — `main_parallel.py` falls back to CPU on its own.
+
+Measured CPU throughput is about **1000 samples/s**, which is roughly 28 s/epoch
+at 30k training samples, so a full 600-epoch fold is a few hours; early stopping
+usually ends it much sooner. The forward runs `seq_len x num_neighbors` = 310
+`LSTMCell` calls in Python, so it is dispatch-bound: extra threads do not help
+(4 and 8 threads measured identical) but a larger batch does, roughly 3x at
+`BATCH_SIZE=1024`. That changes the optimisation, so keep the default 128 for
+runs meant to match cluster numbers and raise it only for smoke tests.
 
 ### Watchers
 
@@ -426,6 +466,7 @@ DANTE-master/datasets/build_dataset.py       DANTE fold pickle generation
 DANTE-master/deep_fformation/dante_paths.py  DANTE data and experiment root resolution
 DANTE-master/deep_fformation/run_models.py   DANTE training entrypoint
 DANTE-master/deep_fformation/utils.py        DANTE model, training loop, output layout
+scripts/train_lstm_local.sh                   LSTM local training, no Slurm
 slurm/submit_lstm.sh                         LSTM submission, camera number -> dataset
 slurm/run_lstm.sbatch                        LSTM job array, one task per fold
 slurm/submit_dante.sh                        DANTE submission, camera number -> dataset
