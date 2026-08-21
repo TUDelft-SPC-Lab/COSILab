@@ -227,6 +227,11 @@ run_fold() {
 
   local env_pairs=(
     "PYTHONPATH=$PROJECT_ROOT"
+    # Output goes through `| tee`, so stdout is a pipe and Python block-buffers
+    # it: nothing reaches the terminal or the log until ~8 KB accumulates or the
+    # process exits, and a Ctrl-C discards the buffer entirely. (The container
+    # sets this in its %environment; a native run does not.)
+    "PYTHONUNBUFFERED=1"
     "RUN_ID=$RUN_ID"
     "GRAPHFF_DATASET=$dataset"
     "GRAPHFF_DATA_ROOT=$GRAPHFF_DATA_ROOT"
