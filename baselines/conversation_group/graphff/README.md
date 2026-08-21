@@ -195,6 +195,34 @@ visible. `EXCLUDE_NODES` defaults to `gpu[36-45]`; set it empty to disable.
 Slurm stdout/stderr goes to `/home/nfs/zli33/slurm_outputs/lstm`, overridable with
 `SLURM_LOG_DIR`.
 
+### Watchers
+
+Every fold reports two known structural issues instead of assuming they don't
+occur, printing a `[watch]` summary and writing CSVs into the fold directory
+(see [diagnostics.py](diagnostics.py)):
+
+| file | what it counts |
+| --- | --- |
+| `watch_indicator_gaps_summary.csv` | per split: neighbours that vanish mid-window and return |
+| `watch_indicator_gaps_samples.csv` | the affected samples |
+| `watch_unfilled_scene_rows_summary.csv` | per split: scene rows no sample ever wrote |
+| `watch_unfilled_scene_rows_scenes.csv` | the affected scenes and person ids |
+
+**Indicator gaps.** `Skynet` masks the LSTM hidden state of an absent neighbour
+but not its cell state, and the cell was just updated with the `-999` placeholder
+input. A neighbour that disappears and comes back therefore carries contaminated
+memory forward. A neighbour that drops out and never returns is harmless, so the
+two are counted separately (`pairs_with_gap` vs `pairs_dropout_only`).
+
+**Unfilled scene rows.** `condense_to_group_mat` seeds the scene matrix with ones
+and fills one row per sample. A sample needs the person visible across the whole
+window, but scoring selects people visible at the single evaluation frame.
+Anyone in that gap keeps an all-ones row, reading as "grouped with everyone",
+which after the `(A + A.T)/2` symmetrisation biases that scene toward
+false-positive merges. If `total_unfilled_rows` is 0 the issue does not arise for
+that data; if it is not, the listed scenes are the ones whose precision is
+affected by an artifact rather than by the model.
+
 ## DANTE
 
 ### Paths
@@ -380,6 +408,7 @@ restored best-validation-MSE weights.
 ```text
 main_parallel.py                              LSTM/GraphFF one-fold entrypoint
 graphff_paths.py                             LSTM data and experiment root resolution
+diagnostics.py                               Watchers for indicator gaps and unfilled rows
 dataset_registry.py                          Supported Mingling cameras
 data.py                                      LSTM/GraphFF data loading and splitting
 model.py                                     LSTM pairwise affinity model

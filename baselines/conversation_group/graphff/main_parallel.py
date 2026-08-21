@@ -7,6 +7,7 @@ import sys
 import pickle
 
 import graphff_paths
+import diagnostics
 from parameters import *
 from data import *
 from model import *
@@ -132,6 +133,36 @@ elif (dataset_make_flag == False):
 	# batch-based loader for training
 	train_tensor_dataset = TensorDataset(train_set.data, train_set.labels)
 	train_loader = DataLoader(dataset=train_tensor_dataset, batch_size=batch_size, shuffle=True)
+
+
+print("\n----------- WATCHERS -----------\n")
+
+# Watcher 1: neighbours that vanish mid-window and come back. Skynet masks the
+# hidden state of an absent neighbour but not its cell state, so a reappearance
+# carries -999-contaminated memory forward. A pure drop-out never returns and is
+# harmless, so the two are counted separately.
+gap_summaries = []
+gap_details = []
+for split_name, split_set in [('train', train_set), ('val', val_set), ('test', test_set)]:
+	summary, per_sample = diagnostics.indicator_gap_report(split_set.data, feature_size)
+	print(diagnostics.format_summary('indicator gaps [' + split_name + ']', summary))
+	summary_row = {'split': split_name}
+	summary_row.update(summary)
+	gap_summaries.append(summary_row)
+	if len(per_sample) > 0:
+		per_sample = per_sample.copy()
+		per_sample.insert(0, 'split', split_name)
+		gap_details.append(per_sample)
+
+pd.DataFrame(gap_summaries).to_csv(
+	output_dir + '/' + 'watch_indicator_gaps_summary' + '.csv', index=False)
+if len(gap_details) > 0:
+	pd.concat(gap_details, ignore_index=True).to_csv(
+		output_dir + '/' + 'watch_indicator_gaps_samples' + '.csv', index=False)
+	print('[watch] a reappearing neighbour carries contaminated LSTM cell state; '
+		'see watch_indicator_gaps_samples.csv')
+else:
+	print('[watch] no reappearance gaps found: cell-state contamination cannot occur here')
 
 
 print("\n----------- TRAINING -----------\n")
@@ -296,6 +327,39 @@ val_scene_seq_mat_dict = condense_to_group_mat(val_predictions, val_scene_group_
 # test_scene_group_idx_map
 test_scene_group_idx_dict= convert_personwise_to_scene(trackers, test_list)
 test_scene_seq_mat_dict = condense_to_group_mat(test_predictions, test_scene_group_idx_dict,seq_len,num_nodes) # test predictions
+
+# Watcher 2: rows of the scene matrix that no sample wrote. Sample validity needs
+# the person visible across the whole window; scoring selects people visible at
+# the single evaluation frame. Anyone in that gap keeps the all-ones seed row,
+# which reads as "grouped with everyone" and inflates false-positive merges.
+gt_for_watch = process_gt_matrices(
+	pd.read_csv(os.path.join(get_dataset_data_dir(dataset_path), 'GT.csv')), num_nodes)
+unfilled_summaries = []
+unfilled_details = []
+for split_name, split_mat_dict in [
+		('train', train_scene_seq_mat_dict),
+		('val', val_scene_seq_mat_dict),
+		('test', test_scene_seq_mat_dict)]:
+	summary, per_scene = diagnostics.unfilled_row_report(
+		split_mat_dict, gt_for_watch, num_nodes)
+	print(diagnostics.format_summary('unfilled scene rows [' + split_name + ']', summary))
+	summary_row = {'split': split_name}
+	summary_row.update(summary)
+	unfilled_summaries.append(summary_row)
+	if len(per_scene) > 0:
+		per_scene = per_scene.copy()
+		per_scene.insert(0, 'split', split_name)
+		unfilled_details.append(per_scene)
+
+pd.DataFrame(unfilled_summaries).to_csv(
+	output_dir + '/' + 'watch_unfilled_scene_rows_summary' + '.csv', index=False)
+if len(unfilled_details) > 0:
+	pd.concat(unfilled_details, ignore_index=True).to_csv(
+		output_dir + '/' + 'watch_unfilled_scene_rows_scenes' + '.csv', index=False)
+	print('[watch] these scenes score an all-ones row as a real person; '
+		'see watch_unfilled_scene_rows_scenes.csv')
+else:
+	print('[watch] every visible person had a sample: no all-ones rows are scored')
 
 # save intermediate scene_seq_mat_dict
 dict_path = os.path.join(output_dir, dataset_label+"_test_scene_seq_mat_dict_fold_"+str(fold)+".pk")
