@@ -83,7 +83,7 @@ intention_backend_defaults() {
             # first run is also where to check that the default --time and the
             # single GPU in the stub are still enough; both are overridable on
             # the sbatch line without editing the stub.
-            BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni-inference.sif"
+            BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni.sif"
             ;;
         *)
             return 1
