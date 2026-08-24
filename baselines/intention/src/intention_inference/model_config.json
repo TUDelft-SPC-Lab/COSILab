@@ -131,7 +131,7 @@
         "frame-count parity with the other two backends, which is the largest controllable",
         "confound when their answers are compared, so it belongs in a commit message."
       ],
-      "model_id": "/tudelft.net/staff-umbrella/neon/models/Qwen3-Omni-30B-A3B-Instruct",
+      "model_id": "/tudelft.net/staff-umbrella/GesBench/models/Qwen3-Omni-30B-A3B-Instruct",
       "load": {
         "device_map": "auto",
         "dtype": "bfloat16",
