@@ -16,7 +16,7 @@
 
 # Every backend this cluster can run, one per line.
 intention_known_backends() {
-    printf '%s\n' gemma qwen7b
+    printf '%s\n' gemma qwen7b qwen3omni30b
 }
 
 intention_backend_is_known() {
@@ -60,6 +60,30 @@ intention_backend_defaults() {
             #                from transformers import Qwen2_5OmniForConditionalGeneration;
             #                print(transformers.__version__)"
             BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif"
+            ;;
+        qwen3omni30b)
+            # Its own image again, not the qwen7b one: Qwen3OmniMoe* landed in
+            # transformers well after the 4.52 that image carries, and pinning
+            # the two separately is what keeps a transformers bump for one
+            # generation from silently changing what the other produces.
+            #
+            # qwen_omni_utils serves both generations and is likewise NOT
+            # vendored in this repo. QWEN_OMNI_UTILS_PATH supplies it from
+            # outside if the image lacks it.
+            #
+            # Before the first run, confirm the image can reach all of it:
+            #
+            #   apptainer exec \
+            #     /tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni-inference.sif \
+            #     python -c "import qwen_omni_utils, av, librosa, transformers;
+            #                from transformers import Qwen3OmniMoeForConditionalGeneration;
+            #                print(transformers.__version__)"
+            #
+            # 30B in bfloat16 is a much bigger residency than qwen7b, so the
+            # first run is also where to check that the default --time and the
+            # single GPU in the stub are still enough; both are overridable on
+            # the sbatch line without editing the stub.
+            BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni-inference.sif"
             ;;
         *)
             return 1

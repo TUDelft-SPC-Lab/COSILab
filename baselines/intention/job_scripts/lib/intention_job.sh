@@ -20,6 +20,7 @@
 # Submit through the stub, for example:
 #   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa
 #   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode fa --index-range 0-250
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen3omni30b --mode pa
 #   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa --no-audio --limit 20
 
 set -euo pipefail

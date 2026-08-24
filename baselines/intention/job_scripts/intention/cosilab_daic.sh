@@ -17,6 +17,15 @@
 # task variant. The SLURM header above sizes the job for a local multimodal model
 # on one GPU.
 #
+# The header is shared by every backend and sized for the smallest of them, so it
+# is not raised for the largest. qwen3omni30b is 30B parameters against qwen7b's
+# 7B; if 10 hours or one card turn out not to be enough for it, override on the
+# submission rather than editing this file, which would change every backend's
+# queue position:
+#
+#   sbatch --time=20:00:00 job_scripts/intention/cosilab_daic.sh \
+#       --backend qwen3omni30b --mode pa
+#
 # This file is only the environment: the SLURM header above (which sbatch must
 # read literally, so it cannot be computed) plus the three host paths. All the
 # actual logic and the full option list live in lib/intention_job.sh.
@@ -25,6 +34,7 @@
 #
 #   sbatch job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa
 #   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode fa --index-range 0-250
+#   sbatch job_scripts/intention/cosilab_daic.sh --backend qwen3omni30b --mode pa
 
 # Absolute host paths. These are NOT container paths: the source below runs on
 # the host, before apptainer is involved. PROJECT_ROOT is what gets bound to

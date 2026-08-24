@@ -1,24 +1,34 @@
-"""The Qwen2.5-Omni backend: chat formatting, media handling and generation.
+"""The Qwen3-Omni backend: chat formatting, media handling and generation.
 
-Everything specific to *this generation* of Qwen-Omni lives here: the model and
-processor classes, the shape of its config tree, and its weights path. The
-plumbing it shares with Qwen3-Omni -- the chat content dicts, the qwen_omni_utils
-loader, the transformers-version quirks, the attention diagnostics -- lives in
-``models.qwen.shared`` and is re-exported below, so every name this module used
-to define is still importable from it.
+Qwen3-Omni-30B-A3B-Instruct is a sparse-MoE omni model -- 30B total parameters,
+roughly 3B active per token -- reading text, images, audio and video. It is the
+same shape of thing as Qwen2.5-Omni and is driven the same way, so this module
+holds only what actually differs and takes the rest from
+``models.qwen.shared``:
 
-Importing this module imports torch, so it is reached only through
-``models.registry.load_model("qwen7b")`` -- never from task code.
+* **Different classes.** ``Qwen3OmniMoeForConditionalGeneration`` and
+  ``Qwen3OmniMoeProcessor``, which need a transformers new enough to carry them
+  -- newer than the 4.52 in the Qwen2.5 image, which is why this backend has its
+  own container image (job_scripts/lib/model_backends.sh).
+* **A deeper config tree.** The talker nests a text config and a code-predictor
+  config, and there is a third top-level tower, code2wav. See
+  ``ATTN_CONFIG_PATHS``.
+* **The talker is built at construction time.** See ``disable_talker`` below;
+  this is the one place the Qwen2.5 recipe is actively wrong here.
 
-Two things differ from a plain text model and are easy to get wrong:
+Unchanged from Qwen2.5-Omni, and the reason the port is small:
 
-* **Sampling knobs are ``thinker_``-prefixed.** Qwen2.5-Omni is two models, a
-  "thinker" that produces text and a "talker" that produces speech.
-  ``max_new_tokens`` reaches the wrong one; ``thinker_max_new_tokens`` is the
-  parameter that matters here. The talker is switched off entirely by default.
+* **Sampling knobs are ``thinker_``-prefixed.** ``generate`` forwards any
+  ``thinker_*`` keyword to the thinker's own ``generate``, and plain
+  ``max_new_tokens`` reaches the wrong model.
 * **``use_audio_in_video`` must agree in three places** -- the preprocessing
   call, the processor call and ``generate``. A mismatch does not raise; it
   interleaves audio features against the wrong placeholders.
+* With ``return_audio=False`` the return value is the thinker's plain token
+  tensor, prompt included, so the continuation still has to be sliced off.
+
+Importing this module imports torch, so it is reached only through
+``models.registry.load_model("qwen3omni30b")`` -- never from task code.
 """
 
 from __future__ import annotations
@@ -30,7 +40,7 @@ from typing import Any
 
 import torch
 import transformers
-from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
+from transformers import Qwen3OmniMoeForConditionalGeneration, Qwen3OmniMoeProcessor
 
 from models.base import (
     BaseMultimodalModel,
@@ -39,14 +49,7 @@ from models.base import (
     MediaPart,
 )
 from models.media_io import frames_at_fps
-
-# Imported rather than defined here since the Qwen3-Omni backend needs the same
-# plumbing. Every one of these was a module-level name in this file before, and
-# importing it keeps it one: `from models.qwen.engine import dtype_kwarg` and
-# friends still resolve. resolve_dtype is unused below and imported for exactly
-# that reason.
 from models.qwen.shared import (
-    ATTN_SUPPORT_FLAGS,
     FPS_SHAPES,
     apply_attn_implementation,
     describe_attn_implementations,
@@ -55,42 +58,41 @@ from models.qwen.shared import (
     dtype_kwarg,
     fps_processor_kwargs,
     load_process_mm_info,
-    resolve_dtype,
     to_qwen_messages,
-    transformers_version,
 )
 
 __all__ = [
-    "ATTN_SUPPORT_FLAGS",
+    "ATTN_CONFIG_PATHS",
     "DEFAULT_MODEL_PATH",
-    "QWEN_SYSTEM_PROMPT",
-    "QwenOmniModel",
-    "apply_attn_implementation",
-    "describe_attn_implementations",
-    "describe_attn_support",
-    "describe_sdpa_backends",
-    "dtype_kwarg",
-    "to_qwen_messages",
-    "transformers_version",
+    "QWEN3_OMNI_SYSTEM_PROMPT",
+    "Qwen3OmniModel",
 ]
 
-DEFAULT_MODEL_PATH = os.environ.get("QWEN_MODEL_PATH", "/scratch/zli33/models/Qwen2.5-Omni-7B")
+DEFAULT_MODEL_PATH = os.environ.get(
+    "QWEN3_OMNI_MODEL_PATH",
+    "/tudelft.net/staff-umbrella/neon/models/Qwen3-Omni-30B-A3B-Instruct",
+)
 
-# Qwen2.5-Omni's own system prompt. Its chat template injects this when the first
-# turn is not a system turn, so it is passed explicitly instead: the prompt the
-# model sees should not depend on which template version shipped with the image.
-QWEN_SYSTEM_PROMPT = (
+# Qwen3-Omni's own system prompt, the same string Qwen2.5-Omni uses. Its chat
+# template injects this when the first turn is not a system turn, so it is
+# passed explicitly instead: the prompt the model sees should not depend on
+# which template version shipped with the image.
+QWEN3_OMNI_SYSTEM_PROMPT = (
     "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, "
     "capable of perceiving auditory and visual inputs, as well as generating text and speech."
 )
 
 # Sub-configs that carry their own _attn_implementation, as dotted paths from
-# the top-level config. Qwen2.5-Omni is several towers under one config and they
-# do not have to agree: transformers resolves the attention backend per module,
-# so the thinker can be on sdpa while the vision tower falls back to eager.
+# the top-level config. Deeper and wider than Qwen2.5-Omni's: the talker holds a
+# text config and a code-predictor config of its own, and code2wav is a third
+# top-level tower. transformers resolves the attention backend per module, so
+# these do not have to agree -- the thinker can be on sdpa while the vision
+# tower falls back to eager -- and a leaf that is never written to is not an
+# error, merely slow and large.
 #
-# Qwen3-Omni's tree is a different shape, which is why the two functions that
-# walk this take it as an argument rather than closing over one list.
+# The talker and code2wav entries stay in the list even though this task loads
+# neither (see disable_talker): a run that turns the talker back on should not
+# also silently lose its attention setting.
 ATTN_CONFIG_PATHS = (
     "",
     "thinker_config",
@@ -98,15 +100,19 @@ ATTN_CONFIG_PATHS = (
     "thinker_config.vision_config",
     "thinker_config.audio_config",
     "talker_config",
+    "talker_config.text_config",
+    "talker_config.code_predictor_config",
+    "code2wav_config",
 )
 
 
-class QwenOmniModel(BaseMultimodalModel):
-    """Qwen2.5-Omni, loaded locally through transformers."""
+class Qwen3OmniModel(BaseMultimodalModel):
+    """Qwen3-Omni, loaded locally through transformers."""
 
-    name = "qwen"
-    # No "thinking": Qwen's thinker is the text tower, not a reasoning mode, so
-    # asking for enable_thinking on this backend is still refused up front.
+    name = "qwen3omni"
+    # No "thinking": this is the Instruct checkpoint, and in any case Qwen's
+    # thinker is the text tower rather than a reasoning mode, so asking for
+    # enable_thinking on this backend is refused up front.
     capabilities = frozenset({"text", "image", "audio", "video", "multi_turn"})
 
     def __init__(
@@ -116,7 +122,7 @@ class QwenOmniModel(BaseMultimodalModel):
         device_map: str = "auto",
         dtype: str = "bfloat16",
         use_audio_in_video: bool = False,
-        system_prompt: str = QWEN_SYSTEM_PROMPT,
+        system_prompt: str = QWEN3_OMNI_SYSTEM_PROMPT,
         disable_talker: bool = True,
         attn_implementation: str | None = None,
     ) -> None:
@@ -138,54 +144,76 @@ class QwenOmniModel(BaseMultimodalModel):
         self.fps_shape: str | None = None
 
         print(
-            f"[INFO] Loading Qwen2.5-Omni model: {model_id} "
+            f"[INFO] Loading Qwen3-Omni model: {model_id} "
             f"(transformers {transformers.__version__})",
             flush=True,
         )
-        # Left unset by default, which is not the same as choosing eager: it
-        # means whatever this transformers decides, and on the 4.52 in the qwen
-        # image that is eager for every tower even though the top-level config
-        # reports sdpa. Eager materialises a full N-by-N score matrix per
-        # attention layer, and the vision tower attends over patches -- four per
-        # visual token -- so its matrix is sixteen times the one the token count
-        # suggests. That is what put a multi-turn video prompt over a 96 GB card.
-        #
-        # Set it in the task's model_config.json under backends.<name>.load. The
-        # line below reports what each tower actually resolved to, so a request
-        # that did not take is visible rather than assumed.
-        load_kwargs: dict[str, Any] = {"device_map": device_map, **dtype_kwarg(dtype)}
+
+        # The config is always loaded, not only when an attention backend was
+        # requested, because disabling the talker has to happen on it. Both
+        # edits ride into from_pretrained on the same object.
+        config = Qwen3OmniMoeForConditionalGeneration.config_class.from_pretrained(model_id)
+
+        if disable_talker:
+            # Cleared on the config rather than by calling disable_talker()
+            # afterwards, which is what the Qwen2.5 backend does. Qwen3-Omni's
+            # __init__ calls enable_talker() whenever config.enable_audio_output
+            # is true, so the later call frees towers that were built first --
+            # and on a 30B MoE that peak is spent on a card this run already
+            # fills. Setting it here means the talker and code2wav weights are
+            # never materialised at all.
+            config.enable_audio_output = False
+
         if attn_implementation is not None:
-            # Passed as a pre-modified config rather than as the
-            # attn_implementation keyword: the keyword only reaches the top two
+            # Applied to the config rather than passed as the
+            # attn_implementation keyword: the keyword reaches only the top
             # levels of this model's config tree, and the towers are built from
-            # the third. See apply_attn_implementation.
-            config = Qwen2_5OmniForConditionalGeneration.config_class.from_pretrained(model_id)
+            # the leaves. See models.qwen.shared.apply_attn_implementation.
+            #
+            # flash_attention_2 is what the model card recommends and is still
+            # not the one to reach for here: the RTX PRO 6000 is Blackwell
+            # (compute 12.x) and upstream flash-attn targets older
+            # architectures. sdpa is the setting in model_config.json.
             applied = apply_attn_implementation(config, attn_implementation, ATTN_CONFIG_PATHS)
             print(
-                f"[INFO] Qwen attention {attn_implementation!r} requested on: "
+                f"[INFO] Qwen3-Omni attention {attn_implementation!r} requested on: "
                 + (", ".join(applied) or "<no config node accepted it>"),
                 flush=True,
             )
-            load_kwargs["config"] = config
 
-        self.model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
+        self.model = Qwen3OmniMoeForConditionalGeneration.from_pretrained(
             model_id,
-            **load_kwargs,
+            config=config,
+            device_map=device_map,
+            **dtype_kwarg(dtype),
         )
         attn_implementations = describe_attn_implementations(self.model, ATTN_CONFIG_PATHS)
         print(
-            f"[INFO] Qwen attention (requested {attn_implementation or '<unset>'}): "
+            f"[INFO] Qwen3-Omni attention (requested {attn_implementation or '<unset>'}): "
             + (", ".join(attn_implementations) or "<none reported by this config>"),
             flush=True,
         )
         for line in describe_attn_support(self.model):
-            print(f"[INFO] Qwen attention support: {line}", flush=True)
+            print(f"[INFO] Qwen3-Omni attention support: {line}", flush=True)
         print(f"[INFO] torch sdpa backends: {describe_sdpa_backends()}", flush=True)
-        self.processor = Qwen2_5OmniProcessor.from_pretrained(model_id)
-        if disable_talker and hasattr(self.model, "disable_talker"):
-            # The speech tower is several GB of weights this task never uses.
-            self.model.disable_talker()
-            print("[INFO] Qwen talker disabled (text-only generation)", flush=True)
+
+        self.processor = Qwen3OmniMoeProcessor.from_pretrained(model_id)
+
+        if disable_talker:
+            # Belt and braces. enable_audio_output=False above should mean there
+            # is nothing left to drop, so this reports what it found: a talker
+            # that is still here means the config flag did not take, which is
+            # worth seeing in the log rather than discovering as memory
+            # pressure.
+            if getattr(self.model, "has_talker", False):
+                self.model.disable_talker()
+                print(
+                    "[WARN] Qwen3-Omni talker was built despite enable_audio_output=False; "
+                    "dropped it after loading",
+                    flush=True,
+                )
+            else:
+                print("[INFO] Qwen3-Omni talker not built (text-only generation)", flush=True)
         self.model.eval()
 
     def prepare_video_part(
@@ -200,9 +228,11 @@ class QwenOmniModel(BaseMultimodalModel):
 
         The count is sent as ``nframes``, never as ``fps``: handing
         qwen_omni_utils a rate would let its own constants -- FPS_MIN_FRAMES,
-        FPS_MAX_FRAMES -- decide, and those differ from what Gemma and Ming
-        would land on. Resolving here and sending an exact count is what makes
-        the three agree.
+        FPS_MAX_FRAMES -- decide, and those differ from what Gemma and
+        Qwen2.5-Omni land on for the same clip. Resolving here and sending an
+        exact count is what makes the frame budget a property of the run rather
+        than of the backend, which is the only reason two models' answers are
+        comparable at all.
         """
         return MediaPart.video(
             video_path,

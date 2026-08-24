@@ -106,6 +106,41 @@
       },
       "generation": {},
       "extra": {}
+    },
+
+    "qwen3omni30b": {
+      "_comment": [
+        "Qwen3-Omni-30B-A3B-Instruct: a sparse-MoE omni model, 30B total parameters with",
+        "roughly 3B active per token. Same family as qwen7b and driven the same way, so",
+        "the knobs below mean exactly what they mean there.",
+        "",
+        "disable_talker is read one step earlier than on qwen7b. Qwen3-Omni builds the",
+        "talker inside its constructor, so the backend clears enable_audio_output on the",
+        "config before loading rather than dropping the towers afterwards; on a model this",
+        "size the difference is peak memory, not just tidiness.",
+        "",
+        "attn_implementation is sdpa for the reason spelled out under qwen7b above. The",
+        "model card recommends flash_attention_2 and that is still not available here: the",
+        "RTX PRO 6000 is Blackwell (compute 12.x) and upstream flash-attn targets older",
+        "architectures. Check the job log's '[INFO] Qwen3-Omni attention (requested ...)'",
+        "line after changing it, and read the leaf towers rather than the first entry.",
+        "",
+        "'generation' is empty on purpose: the frame policy and the token cap come from",
+        "'defaults', so this model sees exactly the clip gemma and qwen7b saw. If a run",
+        "runs out of memory, max_video_frames can be overridden here -- but that breaks",
+        "frame-count parity with the other two backends, which is the largest controllable",
+        "confound when their answers are compared, so it belongs in a commit message."
+      ],
+      "model_id": "/tudelft.net/staff-umbrella/neon/models/Qwen3-Omni-30B-A3B-Instruct",
+      "load": {
+        "device_map": "auto",
+        "dtype": "bfloat16",
+        "attn_implementation": "sdpa",
+        "disable_talker": true,
+        "use_audio_in_video": false
+      },
+      "generation": {},
+      "extra": {}
     }
   }
 }
