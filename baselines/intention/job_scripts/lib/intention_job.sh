@@ -46,6 +46,7 @@ PACKAGE_SUBDIR="baselines/intention"
 # model_id at a new one and it has to be added here in the same commit.
 HOST_BIND_PATHS=(
     /tudelft.net/staff-umbrella/neon      # manifest, media, participant images, results, HF cache
+    /tudelft.net/staff-umbrella/GesBench  # Qwen3-Omni model weights
 )
 
 source "${PROJECT_ROOT}/${PACKAGE_SUBDIR}/job_scripts/lib/intention_paths.sh"
