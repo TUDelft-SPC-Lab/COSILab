@@ -29,11 +29,12 @@ __all__ = [
 # results directory, so "which weights ran" stays answerable from the backend
 # alone. Another size of a generation already listed is one more line here plus a
 # backends.<name> section in the task's model_config.json, both pointing at the
-# same class -- qwen7b and a hypothetical qwen3b would share QwenOmniModel.
+# same class -- qwen3b and qwen7b share QwenOmniModel.
 # Another *generation* needs its own class, as qwen3omni30b does, because the
 # transformers model classes and the config tree differ.
 BACKEND_MODULES: dict[str, str] = {
     "gemma": "models.gemma.engine:GemmaModel",
+    "qwen3b": "models.qwen.engine:QwenOmniModel",
     "qwen7b": "models.qwen.engine:QwenOmniModel",
     "qwen3omni30b": "models.qwen3omni.engine:Qwen3OmniModel",
 }

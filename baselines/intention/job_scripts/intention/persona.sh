@@ -145,6 +145,7 @@ if ! intention_backend_is_known "${backend}"; then
     echo "        Known: $(intention_known_backends | tr '\n' ' ')" >&2
     exit 1
 fi
+backend_gpu_count="$(intention_backend_gpu_count "${backend}")"
 if [[ -n "${assignment_json}" && -n "${task_spec}" ]]; then
     echo "[ERROR] Choose one persona source: --assignment-json or --task-spec." >&2
     exit 1
@@ -281,6 +282,7 @@ fi
 echo "[INFO] launcher           = ${BASH_SOURCE[0]}"
 echo "[INFO] worker             = ${job_script}"
 echo "[INFO] backend            = ${backend}"
+echo "[INFO] GPUs per job       = ${backend_gpu_count}"
 echo "[INFO] mode               = ${mode}"
 echo "[INFO] persona source     = ${source_kind}: ${source_path}"
 echo "[INFO] selected runs      = ${total_runs}"
@@ -341,6 +343,7 @@ for (( chunk = 0; chunk < ${#chunk_selector_starts[@]}; chunk++ )); do
     sbatch_cmd=(
         sbatch
         --export=ALL,INTENTION_PERSONA_JOB=1
+        --gres="gpu:nvidia_rtx_pro_6000:${backend_gpu_count}"
         --job-name="${job_prefix}_${backend}_${selector_start}-${selector_end}"
         "${job_script}"
         --backend "${backend}"

@@ -11,12 +11,12 @@
 # budget and the token cap rather than in a shell file no result records. What a
 # backend can do (thinking mode, audio, video) stays in the backend class.
 #
-# The images are prebuilt artefacts on the share; neither is built from a .def in
+# The images are prebuilt artefacts on the share; none is built from a .def in
 # this repo.
 
 # Every backend this cluster can run, one per line.
 intention_known_backends() {
-    printf '%s\n' gemma qwen7b qwen3omni30b
+    printf '%s\n' gemma qwen3b qwen7b qwen3omni30b
 }
 
 intention_backend_is_known() {
@@ -25,6 +25,23 @@ intention_backend_is_known() {
         [[ "${candidate}" == "${known}" ]] && return 0
     done < <(intention_known_backends)
     return 1
+}
+
+# Number of GPUs a submitted worker should request for this backend. The model
+# still decides how those visible devices are used (the Qwen configs use
+# device_map=auto); this is only Slurm resource policy.
+intention_backend_gpu_count() {
+    case "$1" in
+        gemma)
+            printf '1\n'
+            ;;
+        qwen3b|qwen7b|qwen3omni30b)
+            printf '2\n'
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 # intention_backend_defaults <backend>
@@ -40,8 +57,8 @@ intention_backend_defaults() {
         gemma)
             BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/gemma.sif"
             ;;
-        qwen7b)
-            # Its own image, not the gemma one: Qwen2.5-Omni needs a transformers
+        qwen3b|qwen7b)
+            # Their own image, not the gemma one: Qwen2.5-Omni needs a transformers
             # carrying Qwen2_5OmniForConditionalGeneration plus the audio stack
             # (av, librosa, audioread), and pinning that separately means a
             # transformers bump for one model cannot silently change what the
@@ -80,9 +97,9 @@ intention_backend_defaults() {
             #                print(transformers.__version__)"
             #
             # 30B in bfloat16 is a much bigger residency than qwen7b, so the
-            # first run is also where to check that the default --time and the
-            # single GPU in the job script are still enough; both are overridable
-            # on the sbatch line without editing the script.
+            # first run is also where to check whether the default --time is
+            # enough. It is overridable on the sbatch line without editing the
+            # script.
             BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni.sif"
             ;;
         *)

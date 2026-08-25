@@ -18,10 +18,9 @@
     "because the run looks configured and is not.",
     "",
     "  model_id   weights path or hub id, and the ONLY place it is set. No model tensors",
-    "             live in this repo; this is where the provided path goes. The two",
-    "             /REPLACE_ME/... values below are placeholders and will fail the",
-    "             startup check by design -- an absolute path that is not a directory",
-    "             is refused before the manifest is even read. Keep replacements",
+    "             live in this repo; this is where the provided path goes. An absolute",
+    "             path that is not a directory is refused before the manifest is even",
+    "             read. Keep paths",
     "             absolute: a relative value is treated as a hub id and skips that",
     "             check entirely.",
     "             null falls back to the backend module's own DEFAULT_MODEL_PATH.",
@@ -108,6 +107,24 @@
       "extra": {}
     },
 
+    "qwen3b": {
+      "_comment": [
+        "Qwen2.5-Omni-3B uses the same backend class, container and settings as",
+        "qwen7b. Only model_id differs. Keep its load/generation/extra values in sync",
+        "with qwen7b when changing that experiment configuration."
+      ],
+      "model_id": "/tudelft.net/staff-umbrella/GesBench/models/Qwen2.5-Omni-3B",
+      "load": {
+        "device_map": "auto",
+        "dtype": "bfloat16",
+        "attn_implementation": "sdpa",
+        "disable_talker": true,
+        "use_audio_in_video": false
+      },
+      "generation": {},
+      "extra": {}
+    },
+
     "qwen3omni30b": {
       "_comment": [
         "Qwen3-Omni-30B-A3B-Instruct: a sparse-MoE omni model, 30B total parameters with",
@@ -126,7 +143,7 @@
         "line after changing it, and read the leaf towers rather than the first entry.",
         "",
         "'generation' is empty on purpose: the frame policy and the token cap come from",
-        "'defaults', so this model sees exactly the clip gemma and qwen7b saw. If a run",
+        "'defaults', so this model sees exactly the clip gemma, qwen3b and qwen7b saw. If a run",
         "runs out of memory, max_video_frames can be overridden here -- but that breaks",
         "frame-count parity with the other two backends, which is the largest controllable",
         "confound when their answers are compared, so it belongs in a commit message."

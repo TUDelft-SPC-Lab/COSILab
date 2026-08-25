@@ -41,6 +41,7 @@ __all__ = [
     "apply_attn_implementation",
     "describe_attn_implementations",
     "describe_attn_support",
+    "describe_device_map",
     "describe_sdpa_backends",
     "dtype_kwarg",
     "fps_processor_kwargs",
@@ -304,6 +305,36 @@ def describe_attn_support(model: Any, max_depth: int = 3) -> list[str]:
     except Exception as exc:  # noqa: BLE001 - a diagnostic must not end a job
         return [f"<unavailable: {type(exc).__name__}: {exc}>"]
     return list(found.values())
+
+
+def describe_device_map(model: Any) -> str:
+    """Summarise Accelerate's resolved placement without dumping a huge map.
+
+    ``device_map="auto"`` is a request to fit modules across the devices that
+    are visible to the process, not a promise that every visible GPU will get a
+    module. Reporting both facts makes a two-GPU Slurm allocation verifiable in
+    the job log and makes the one-GPU-if-it-fits case explicit.
+    """
+    visible_cuda = torch.cuda.device_count()
+    device_map = getattr(model, "hf_device_map", None)
+    if not isinstance(device_map, dict) or not device_map:
+        model_device = getattr(model, "device", "<not reported>")
+        return (
+            f"visible CUDA devices={visible_cuda}; "
+            f"hf_device_map=<not reported>; model.device={model_device}"
+        )
+
+    modules_by_device: dict[str, list[str]] = {}
+    for module_name, device in device_map.items():
+        modules_by_device.setdefault(str(device), []).append(module_name or "<root>")
+
+    placements: list[str] = []
+    for device, modules in modules_by_device.items():
+        preview = ", ".join(modules[:3])
+        if len(modules) > 3:
+            preview += f", ... (+{len(modules) - 3})"
+        placements.append(f"{device}: {len(modules)} module(s) [{preview}]")
+    return f"visible CUDA devices={visible_cuda}; hf_device_map=" + "; ".join(placements)
 
 
 def describe_sdpa_backends() -> str:

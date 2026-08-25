@@ -8,7 +8,8 @@ loader, the transformers-version quirks, the attention diagnostics -- lives in
 to define is still importable from it.
 
 Importing this module imports torch, so it is reached only through
-``models.registry.load_model("qwen7b")`` -- never from task code.
+``models.registry.load_model("qwen3b")`` or ``load_model("qwen7b")`` -- never
+from task code.
 
 Two things differ from a plain text model and are easy to get wrong:
 
@@ -51,6 +52,7 @@ from models.qwen.shared import (
     apply_attn_implementation,
     describe_attn_implementations,
     describe_attn_support,
+    describe_device_map,
     describe_sdpa_backends,
     dtype_kwarg,
     fps_processor_kwargs,
@@ -68,6 +70,7 @@ __all__ = [
     "apply_attn_implementation",
     "describe_attn_implementations",
     "describe_attn_support",
+    "describe_device_map",
     "describe_sdpa_backends",
     "dtype_kwarg",
     "to_qwen_messages",
@@ -172,6 +175,7 @@ class QwenOmniModel(BaseMultimodalModel):
             model_id,
             **load_kwargs,
         )
+        print(f"[INFO] Qwen Accelerate placement: {describe_device_map(self.model)}", flush=True)
         attn_implementations = describe_attn_implementations(self.model, ATTN_CONFIG_PATHS)
         print(
             f"[INFO] Qwen attention (requested {attn_implementation or '<unset>'}): "

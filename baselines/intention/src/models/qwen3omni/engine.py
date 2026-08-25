@@ -54,6 +54,7 @@ from models.qwen.shared import (
     apply_attn_implementation,
     describe_attn_implementations,
     describe_attn_support,
+    describe_device_map,
     describe_sdpa_backends,
     dtype_kwarg,
     fps_processor_kwargs,
@@ -186,6 +187,10 @@ class Qwen3OmniModel(BaseMultimodalModel):
             config=config,
             device_map=device_map,
             **dtype_kwarg(dtype),
+        )
+        print(
+            f"[INFO] Qwen3-Omni Accelerate placement: {describe_device_map(self.model)}",
+            flush=True,
         )
         attn_implementations = describe_attn_implementations(self.model, ATTN_CONFIG_PATHS)
         print(

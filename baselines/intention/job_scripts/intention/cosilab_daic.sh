@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem-per-cpu=8GB
-#SBATCH --gres=gpu:nvidia_rtx_pro_6000:1
+#SBATCH --gres=gpu:nvidia_rtx_pro_6000:2
 #SBATCH --mail-type=END
 #SBATCH --output=/home/zli33/linuxhome/slurm_outputs/intention/slurm_%j.out
 #SBATCH --error=/home/zli33/linuxhome/slurm_outputs/intention/slurm_%j.err
@@ -27,14 +27,13 @@
 # and lib/model_backends.sh maps that name to a container image; --mode picks the
 # task variant (fa/sa/pa). Any backend runs any mode.
 #
-# The SLURM header above is shared by every backend and sized for the smallest of
-# them, so it is not raised for the largest. qwen3omni30b is 30B parameters
-# against qwen7b's 7B; if 10 hours or one card turn out not to be enough, override
-# on the submission rather than editing this file, which would change every
-# backend's queue position:
+# The shared header requests two GPUs so direct Qwen jobs expose both devices to
+# Accelerate. A direct Gemma job can release the unused card with an sbatch
+# override. persona.sh knows the backend before it submits and applies the same
+# override automatically (one GPU for Gemma, two for every Qwen backend):
 #
-#   sbatch --time=20:00:00 job_scripts/intention/cosilab_daic.sh \
-#       --backend qwen3omni30b --mode pa
+#   sbatch --gres=gpu:nvidia_rtx_pro_6000:1 \
+#       job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa
 #
 # Run `bash job_scripts/intention/cosilab_daic.sh --help` for the full options.
 

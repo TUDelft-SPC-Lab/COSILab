@@ -2,7 +2,7 @@
 
 This folder contains the INGroup intention-recognition baseline that prompts a multimodal model on 30-second clips, plus analysis code for survey responses and model-human annotation comparison.
 
-Two things vary independently, and neither is a property of the code. Which model runs is a `--backend` choice -- `gemma`, `qwen7b` and `qwen3omni30b` today -- and the task itself imports no torch and knows nothing about either. What is asked of it is a `--mode` choice, and the three modes are one experimental axis: how much of the group's audio is stacked into a single soundtrack, and therefore how much of it can be attributed to a person. Any mode runs on any backend.
+Two things vary independently, and neither is a property of the code. Which model runs is a `--backend` choice -- `gemma`, `qwen3b`, `qwen7b` and `qwen3omni30b` today -- and the task itself imports no torch and knows nothing about either. What is asked of it is a `--mode` choice, and the three modes are one experimental axis: how much of the group's audio is stacked into a single soundtrack, and therefore how much of it can be attributed to a person. Any mode runs on any backend.
 
 The inference code is packaged as an installable Python project (`intention_inference`) built with [uv](https://docs.astral.sh/uv/). The annotation and survey analysis code is kept separately as standalone notebooks and R scripts.
 
@@ -244,9 +244,9 @@ backends.<name>.extra        backend-only knobs, e.g. gemma's enable_thinking
 defaults                     max_new_tokens, sampling, and the frame policy
 ```
 
-There are no `--model` / `--max-new-tokens` / `--temperature` / `--top-p` / `--top-k` / `--do-sample` / `--enable-thinking` / `--max-video-frames` flags any more. Change a run by editing that file and resubmitting; the settings are then something that can be read, diffed and committed, and they are recorded into every result file. Setting a knob a backend does not support (`enable_thinking` on either Qwen backend) is refused at startup rather than dropped.
+There are no `--model` / `--max-new-tokens` / `--temperature` / `--top-p` / `--top-k` / `--do-sample` / `--enable-thinking` / `--max-video-frames` flags any more. Change a run by editing that file and resubmitting; the settings are then something that can be read, diffed and committed, and they are recorded into every result file. Setting a knob a backend does not support (`enable_thinking` on any Qwen backend) is refused at startup rather than dropped.
 
-Any `model_id` shipping as a `/REPLACE_ME/...` placeholder -- `qwen7b`'s does -- will fail the startup check by design. Replace it with an absolute path: a relative value is treated as a Hugging Face hub id and skips that check.
+An absolute `model_id` that is not a directory fails the startup check before the manifest is read. A relative value is treated as a Hugging Face Hub id and therefore skips that local-directory check.
 
 ## Submit on DAIC
 
@@ -324,11 +324,12 @@ DATA_ROOT      /tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/proce
 input_json     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/annotation_clips.json
 output_dir     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/model_responses/<backend>/<mode>
 gemma        SIF  /tudelft.net/staff-umbrella/neon/apptainer/gemma.sif
+qwen3b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
 qwen7b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
 qwen3omni30b SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni-inference.sif
 ```
 
-Each backend gets its own image so a `transformers` bump for one model cannot silently change what another produces. `qwen3omni30b` needs a newer `transformers` than the 4.52 in the Qwen2.5 image, which is what makes that separation load-bearing rather than merely tidy.
+The two Qwen2.5 sizes share one image and backend class; only their configured weights differ. Qwen3-Omni gets a separate image because `qwen3omni30b` needs a newer `transformers` than the 4.52 in the Qwen2.5 image.
 
 `PROJECT_ROOT` is bound to `/workspace` in the container and `PYTHONPATH` is set to `/workspace/baselines/intention/src`, so the job always runs the checkout's code rather than a copy baked into the image.
 
@@ -336,11 +337,14 @@ Submit plain, single-job ranges:
 
 ```bash
 sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode fa --index-range 0-99
+sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen3b --mode pa --index-range 0-999
 sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen3omni30b --mode pa --index-range 0-999
 sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa --index-range 1000-1999 --no-audio
 ```
 
-The SLURM header in the job script is shared by every backend and sized for the smallest, so it is not raised for the largest. `qwen3omni30b` is 30B parameters against `qwen7b`'s 7B; if the 10-hour default or the single card turns out not to be enough, override on the submission (`sbatch --time=20:00:00 ...`) rather than editing the script for everyone.
+The worker's shared SLURM header requests two RTX PRO 6000 GPUs, so direct jobs expose two cards to every Qwen backend. `persona.sh` applies backend-specific requests automatically: one GPU for Gemma and two for `qwen3b`, `qwen7b` and `qwen3omni30b`. For a direct Gemma job, release the unused card with `sbatch --gres=gpu:nvidia_rtx_pro_6000:1 ...`.
+
+All Qwen configs use `device_map: "auto"`. Accelerate can dispatch model modules across the visible GPUs, but it is memory-driven and may place the whole 3B or 7B model on GPU 0 when that model fits there; requesting two GPUs does not itself guarantee a balanced split or double inference throughput. Each Qwen load prints `Accelerate placement` with the visible CUDA count and the resolved `hf_device_map`, so check that line in the Slurm log when both-card placement matters.
 
 Override input and output:
 
