@@ -14,14 +14,17 @@ set -euo pipefail
 
 PROJECT_ROOT="/home/zli33/linuxhome/projects/COSILab"
 SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif"
-VIDEO=""
-IMAGE=""
+VIDEO="/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/video_clips_30s_timestamp_fixed/seg_134500_134530/camera_06-mingle_session_1.mp4"
+IMAGE="/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/participant_imgs/participant_10.png"
 BACKEND="qwen3b"
 FRAMES="4,8,16,32"
 
 usage() {
-    echo "Usage: sbatch $0 --video PATH [--image PATH] [--backend qwen3b|qwen7b]" >&2
-    echo "                    [--frames 4,8,16,32] [--sif-path PATH]" >&2
+    echo "Usage: sbatch $0 --backend qwen3b|qwen7b [options]" >&2
+    echo "  --video PATH    Override the representative COSILab clip" >&2
+    echo "  --image PATH    Override participant_10.png" >&2
+    echo "  --frames CSV    Default: 4,8,16,32" >&2
+    echo "  --sif-path PATH Override the rebuilt container image" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -39,10 +42,6 @@ done
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
     echo "[ERROR] Submit this script with sbatch." >&2
     exit 1
-fi
-if [[ -z "${VIDEO}" ]]; then
-    echo "[ERROR] --video is required." >&2
-    exit 2
 fi
 if [[ "${BACKEND}" != "qwen3b" && "${BACKEND}" != "qwen7b" ]]; then
     echo "[ERROR] --backend must be qwen3b or qwen7b." >&2
