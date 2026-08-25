@@ -23,6 +23,16 @@ INTENTION_INPUT_JSON="${INTENTION_PIPELINE_ROOT}/annotation_clips.json"
 INTENTION_OUTPUT_DIR="${INTENTION_PIPELINE_ROOT}/model_responses"
 INTENTION_PARTICIPANT_IMAGE_ROOT="${INTENTION_PIPELINE_ROOT}/participant_imgs"
 
+# The persona experiment. persona_NNNN.txt files, the balanced design built from
+# them, and the externally authored spec the annotation pipeline emits.
+#
+# The assignment is built by intention/build_assignment_daic.sh and read by
+# sweep.sh; nothing in this repo writes the task spec -- it arrives from the
+# annotation pipeline and is read by spec_sweep.sh.
+INTENTION_PERSONA_DIR="${INTENTION_PIPELINE_ROOT}/persona_prompts"
+INTENTION_ASSIGNMENT_JSON="${INTENTION_PIPELINE_ROOT}/ingroup_assignment.json"
+INTENTION_TASK_SPEC_JSON="${INTENTION_PIPELINE_ROOT}/personas_prolific_ids.json"
+
 # The HF cache is a write target, so it is here rather than inlined: a job that
 # cannot write it re-downloads weights it already has.
 INTENTION_HF_CACHE="/tudelft.net/staff-umbrella/neon/zonghuan/.cache/huggingface"
@@ -56,4 +66,23 @@ intention_set_local_prefixes
 # until its pattern is updated.
 intention_output_dir() {
     printf '%s\n' "$1/$2/$3"
+}
+
+# intention_persona_output_dir <output_dir> <backend> <mode>
+#
+# Where a balanced-design sweep writes its persona_XXXX.json. Its own level under
+# the backend/mode path, so a sweep of several hundred persona files never mixes
+# with the handful of plain runs beside it.
+intention_persona_output_dir() {
+    printf '%s\n' "$(intention_output_dir "$1" "$2" "$3")/personas"
+}
+
+# intention_spec_output_dir <output_dir> <backend> <mode> <spec stem>
+#
+# Where a task-spec run writes its <task_id>.json. A separate tree from the
+# personas above, and keyed by the spec: spec output is named by task id, and the
+# persona form of a spec names its tasks persona_<prolific id>, which landing
+# among the design's own persona_NNNN.json would be indistinguishable from it.
+intention_spec_output_dir() {
+    printf '%s\n' "$(intention_output_dir "$1" "$2" "$3")/spec_runs/$4"
 }

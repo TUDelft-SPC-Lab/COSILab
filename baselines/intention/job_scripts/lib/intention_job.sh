@@ -82,6 +82,18 @@ limit=""
 index_range=""
 start_index=""
 end_index=""
+# The persona experiment. Empty means "not a persona run": with none of these the
+# job is a plain slice of the manifest, which is what it has always been.
+persona_range=""
+persona_start=""
+persona_end=""
+persona_dir="${INTENTION_PERSONA_DIR}"
+persona_output_dir=""
+assignment_json=""
+task_spec=""
+task_range=""
+audio_mix_dir=""
+overwrite=0
 
 usage() {
     echo "Usage:" >&2
@@ -106,6 +118,24 @@ usage() {
     echo "  --no-audio                                 Omit audio inputs" >&2
     echo "  --limit N                                  Cap retained records" >&2
     echo "  --index-range X-Y                          Process zero-based JSON indices X through Y" >&2
+    echo "  --persona N | X-Y                          Persona number or range -> persona_dir/persona_000N.txt" >&2
+    echo "                                             Requires --assignment-json." >&2
+    echo "  --persona-dir PATH                         Default: ${persona_dir}" >&2
+    echo "  --persona-output-dir PATH                  Where persona_XXXX.json / <task_id>.json land." >&2
+    echo "                                             Default: derived from --output-dir" >&2
+    echo "  --assignment-json PATH                     Balanced design from build_assignment.py." >&2
+    echo "                                             Required with --persona; excludes" >&2
+    echo "                                             --index-range/--limit." >&2
+    echo "  --task-spec PATH                           External persona x clip spec: each task names its" >&2
+    echo "                                             own persona, optionally its own prompt config, and" >&2
+    echo "                                             its clips by record id. Excludes --persona/" >&2
+    echo "                                             --assignment-json/--index-range/--limit." >&2
+    echo "  --task-range X-Y                           Run only tasks X through Y of the spec, 1-based" >&2
+    echo "                                             and inclusive. Requires --task-spec." >&2
+    echo "  --audio-mix-dir PATH                       Stacked-audio cache. Default: derived from the" >&2
+    echo "                                             output path. Point every backend at one directory" >&2
+    echo "                                             to share the cache." >&2
+    echo "  --overwrite                                Redo runs whose output JSON already exists" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -161,6 +191,38 @@ while [[ $# -gt 0 ]]; do
         --index-range)
             index_range="${2:?Missing value for --index-range}"
             shift 2
+            ;;
+        --persona)
+            persona_range="${2:?Missing value for --persona}"
+            shift 2
+            ;;
+        --persona-dir)
+            persona_dir="${2:?Missing value for --persona-dir}"
+            shift 2
+            ;;
+        --persona-output-dir)
+            persona_output_dir="${2:?Missing value for --persona-output-dir}"
+            shift 2
+            ;;
+        --assignment-json)
+            assignment_json="${2:?Missing value for --assignment-json}"
+            shift 2
+            ;;
+        --task-spec)
+            task_spec="${2:?Missing value for --task-spec}"
+            shift 2
+            ;;
+        --task-range)
+            task_range="${2:?Missing value for --task-range}"
+            shift 2
+            ;;
+        --audio-mix-dir)
+            audio_mix_dir="${2:?Missing value for --audio-mix-dir}"
+            shift 2
+            ;;
+        --overwrite)
+            overwrite=1
+            shift
             ;;
         # Removed in favour of the task's model config. Answered explicitly rather
         # than falling through to "Unknown option", so a command out of shell
@@ -254,12 +316,107 @@ if [[ "${input_json}" != /* ]]; then
     input_json="${DATA_ROOT}/${input_json}"
 fi
 
+# A task spec chooses its personas and their clips itself, so it is exclusive with
+# the balanced design and with anything that would narrow the clips underneath it.
+# Checked before the assignment gate below, not after: --persona and
+# --assignment-json each have their own rule about the other, and hitting those
+# first would answer a --task-spec mistake with advice about building a design.
+if [[ -n "${task_spec}" ]]; then
+    for conflicting in "--persona:${persona_range}" "--assignment-json:${assignment_json}" \
+        "--index-range:${index_range}" "--limit:${limit}"; do
+        if [[ -n "${conflicting#*:}" ]]; then
+            echo "[ERROR] --task-spec cannot be combined with ${conflicting%%:*}." >&2
+            echo "        A spec names its own personas and their clips; for the balanced" >&2
+            echo "        design use --persona with --assignment-json instead." >&2
+            exit 1
+        fi
+    done
+    if [[ ! -f "${task_spec}" ]]; then
+        echo "[ERROR] Task spec not found: ${task_spec}" >&2
+        exit 1
+    fi
+    if [[ -n "${task_range}" ]]; then
+        if [[ ! "${task_range}" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            echo "[ERROR] Invalid task range: ${task_range}; expected X-Y, for example 1-50" >&2
+            exit 1
+        fi
+        if (( BASH_REMATCH[2] < BASH_REMATCH[1] )); then
+            echo "[ERROR] Invalid task range: ${task_range} (end is before start)" >&2
+            exit 1
+        fi
+        if (( BASH_REMATCH[1] < 1 )); then
+            echo "[ERROR] Invalid task range: ${task_range} (--task-range is 1-based)" >&2
+            exit 1
+        fi
+    fi
+elif [[ -n "${task_range}" ]]; then
+    echo "[ERROR] --task-range requires --task-spec." >&2
+    exit 1
+fi
+
+if [[ -n "${persona_range}" ]]; then
+    if [[ "${persona_range}" =~ ^([0-9]+)$ ]]; then
+        persona_start="${BASH_REMATCH[1]}"
+        persona_end="${persona_start}"
+    elif [[ "${persona_range}" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+        persona_start="${BASH_REMATCH[1]}"
+        persona_end="${BASH_REMATCH[2]}"
+        if (( persona_end < persona_start )); then
+            echo "[ERROR] Invalid persona range: ${persona_range} (end is before start)" >&2
+            exit 1
+        fi
+    else
+        echo "[ERROR] Invalid persona: ${persona_range}; expected N or X-Y, for example 5 or 1-10" >&2
+        exit 1
+    fi
+fi
+
+# Personas and the design go together: personas only ever run the balanced
+# design, and the design owns the clip dimension, so a range or cap on top of it
+# would silently drop assigned clips and break that balance.
+if [[ -n "${assignment_json}" ]]; then
+    for conflicting in "--index-range:${index_range}" "--limit:${limit}"; do
+        if [[ -n "${conflicting#*:}" ]]; then
+            echo "[ERROR] --assignment-json cannot be combined with ${conflicting%%:*}." >&2
+            exit 1
+        fi
+    done
+    if [[ -z "${persona_range}" ]]; then
+        echo "[ERROR] --assignment-json requires --persona." >&2
+        exit 1
+    fi
+    if [[ ! -f "${assignment_json}" ]]; then
+        echo "[ERROR] Assignment JSON not found: ${assignment_json}" >&2
+        echo "        Build it with: sbatch job_scripts/intention/build_assignment_daic.sh" >&2
+        exit 1
+    fi
+elif [[ -n "${persona_range}" ]]; then
+    echo "[ERROR] --persona requires --assignment-json. Running every persona over every" >&2
+    echo "        clip is not supported; that cross product is what the balanced design" >&2
+    echo "        replaces. Build one with: sbatch job_scripts/intention/build_assignment_daic.sh" >&2
+    exit 1
+fi
+
 # Re-derive in case --data-root overrode DATA_ROOT above.
 intention_set_local_prefixes "${DATA_ROOT}"
 VIDEO_LOCAL_PATH_PREFIX="${INTENTION_VIDEO_LOCAL_PATH_PREFIX}"
 AUDIO_LOCAL_PATH_PREFIX="${INTENTION_AUDIO_LOCAL_PATH_PREFIX}"
 
 run_output_dir="$(intention_output_dir "${output_dir}" "${backend}" "${mode}")"
+
+# A persona run writes one file per persona or per task, so --output names
+# nothing it could use; the directory is what matters. A spec gets its own tree
+# keyed by the spec file, for the reason in lib/intention_paths.sh.
+if [[ -z "${persona_output_dir}" ]]; then
+    if [[ -n "${task_spec}" ]]; then
+        task_spec_stem="$(basename "${task_spec}")"
+        persona_output_dir="$(intention_spec_output_dir \
+            "${output_dir}" "${backend}" "${mode}" "${task_spec_stem%.json}")"
+    else
+        persona_output_dir="$(intention_persona_output_dir "${output_dir}" "${backend}" "${mode}")"
+    fi
+fi
+
 if [[ -z "${output_json}" ]]; then
     input_stem="$(basename "${input_json}")"
     input_stem="${input_stem%.json}"
@@ -298,6 +455,15 @@ if [[ -n "${prompt_config}" ]]; then
     container_prompt_config="$(container_path "${prompt_config}")"
 fi
 container_model_config="$(container_path "${model_config}")"
+# Same rewrite: only a spec or persona dir under PROJECT_ROOT becomes a /workspace
+# path. One under /tudelft.net is bind-mounted at its own path, which is where a
+# spec belongs -- the persona and prompt-config paths *inside* it are resolved by
+# the Python side and get no translation at all.
+container_task_spec=""
+if [[ -n "${task_spec}" ]]; then
+    container_task_spec="$(container_path "${task_spec}")"
+fi
+container_persona_dir="$(container_path "${persona_dir}")"
 
 # ---------------------------------------------------------------------------
 # Pre-flight
@@ -333,6 +499,11 @@ for required_file in "${prompt_config}" "${model_config}" "${input_json}"; do
     fi
 done
 
+if [[ -n "${persona_range}" && ! -d "${persona_dir}" ]]; then
+    echo "[ERROR] Persona dir not found: ${persona_dir}" >&2
+    exit 1
+fi
+
 # No weights check here: this script no longer knows the path. cli.py reads it
 # from the model config and checks it before touching the manifest, so the
 # failure is just as early and names the file to fix.
@@ -361,6 +532,9 @@ trap 'rm -rf "${NUMBA_CACHE_DIR}" "${TRITON_CACHE_DIR}"' EXIT
 mkdir -p "${SLURM_OUTPUT_ROOT}/intention"
 mkdir -p "${INTENTION_HF_CACHE}"
 mkdir -p "$(dirname "${output_json}")"
+if [[ -n "${persona_range}" || -n "${task_spec}" ]]; then
+    mkdir -p "${persona_output_dir}"
+fi
 
 echo "[INFO] project_root              = ${PROJECT_ROOT} (commit $(git -C "${PROJECT_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown))"
 echo "[INFO] home_root                 = ${HOME_ROOT}"
@@ -385,6 +559,14 @@ echo "[INFO] limit                     = ${limit:-<none>}"
 echo "[INFO] index_range               = ${index_range:-<none>}"
 echo "[INFO] numba_cache_dir           = ${NUMBA_CACHE_DIR}"
 echo "[INFO] triton_cache_dir          = ${TRITON_CACHE_DIR}"
+echo "[INFO] persona_range             = ${persona_range:-<none>}"
+echo "[INFO] persona_dir               = ${persona_dir}"
+echo "[INFO] persona_output_dir        = ${persona_output_dir}"
+echo "[INFO] assignment_json           = ${assignment_json:-<none>}"
+echo "[INFO] task_spec                 = ${task_spec:-<none>}"
+echo "[INFO] task_range                = ${task_range:-<all tasks in the spec>}"
+echo "[INFO] audio_mix_dir             = ${audio_mix_dir:-<derived from output path>}"
+echo "[INFO] overwrite                 = ${overwrite}"
 echo "[INFO] video_media_path_prefix   = ${INTENTION_VIDEO_MEDIA_PATH_PREFIX}"
 echo "[INFO] video_local_path_prefix   = ${VIDEO_LOCAL_PATH_PREFIX}"
 echo "[INFO] audio_media_path_prefix   = ${INTENTION_AUDIO_MEDIA_PATH_PREFIX}"
@@ -417,6 +599,34 @@ if [[ -n "${limit}" ]]; then
 fi
 if [[ -n "${index_range}" ]]; then
     python_args+=(--start-index "${start_index}" --end-index "${end_index}")
+fi
+if [[ -n "${audio_mix_dir}" ]]; then
+    python_args+=(--audio-mix-dir "${audio_mix_dir}")
+fi
+if [[ "${overwrite}" == "1" ]]; then
+    python_args+=(--overwrite)
+fi
+if [[ -n "${assignment_json}" ]]; then
+    python_args+=(--assignment-json "${assignment_json}")
+fi
+if [[ -n "${task_spec}" ]]; then
+    python_args+=(--task-spec "${container_task_spec}" --persona-output-dir "${persona_output_dir}")
+    if [[ -n "${task_range}" ]]; then
+        python_args+=(--task-range "${task_range}")
+    fi
+fi
+if [[ -n "${persona_range}" ]]; then
+    python_args+=(--persona-output-dir "${persona_output_dir}")
+    # Expanded here rather than in Python so a missing persona file fails at
+    # submit time, before the job takes a place in the queue.
+    for (( persona_number = persona_start; persona_number <= persona_end; persona_number++ )); do
+        persona_file="persona_$(printf '%04d' "${persona_number}").txt"
+        if [[ ! -f "${persona_dir}/${persona_file}" ]]; then
+            echo "[ERROR] Persona prompt not found: ${persona_dir}/${persona_file}" >&2
+            exit 1
+        fi
+        python_args+=(--persona-prompt "${container_persona_dir}/${persona_file}")
+    done
 fi
 
 bind_args=(

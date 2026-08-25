@@ -1,12 +1,19 @@
 """Command line and order of operations for intention inference.
 
-This module owns neither of the two things that vary. Which model answers is
-``--backend`` and the backend API in ``models/`` (see
-``models.base.BaseMultimodalModel``), with ``model_config.json`` saying which
-weights it loads under what decoding parameters. What is asked, and how the
-question is grounded, is ``--mode`` and the task modes in ``modes/`` (see
-``modes.base.BaseTaskMode``), each of which ships its own prompt config. The two
-are independent: any mode runs on any backend.
+This module owns none of the three things that vary.
+
+    --backend   WHICH MODEL answers, through the backend API in ``models/``
+                (see ``models.base.BaseMultimodalModel``), with
+                ``model_config.json`` naming the weights and the decoding
+                parameters.
+    --mode      WHAT IS ASKED, and how the question is grounded: the task modes
+                in ``modes/`` (see ``modes.base.BaseTaskMode``), each shipping
+                its own prompt config.
+    runs/       WHO ASKS IT, over WHICH CLIPS: a plain slice of the manifest, a
+                balanced persona x clip design, or an externally authored spec.
+                Selected by ``--assignment-json`` / ``--task-spec``, or neither.
+
+All three are independent: any selector runs any mode on any backend.
 
 What is left here is manifest loading, path resolution and the sequence -- which
 is chosen so that anything cheap that can fail does so before the weights are
@@ -26,6 +33,7 @@ from .manifest import load_manifest_records
 from .modes.registry import available_modes, load_mode
 from .prompt import load_prompt_config
 from .records import RecordContext
+from .runs import NothingToDo, RunContext, select_run_plan
 
 # This task's own weights, decoding parameters and frame policy. There is no
 # matching prompt-config constant: that one belongs to the mode, since which
@@ -156,6 +164,73 @@ def parse_args() -> argparse.Namespace:
         help="Optional override for the system prompt from the prompt config.",
     )
     parser.add_argument(
+        "--persona-prompt",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "Path to a persona_XXXX.txt file, prepended to the system prompt so the "
+            "model answers as that observer. Repeatable: each persona runs its assigned "
+            "clips and is written to its own JSON under --persona-output-dir. Requires "
+            "--assignment-json."
+        ),
+    )
+    parser.add_argument(
+        "--persona-output-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory for the per-run result files, named persona_XXXX.json (or "
+            "<task_id>.json in --task-spec mode). Required with --persona-prompt and "
+            "with --task-spec."
+        ),
+    )
+    parser.add_argument(
+        "--assignment-json",
+        type=Path,
+        default=None,
+        help=(
+            "Balanced persona x clip assignment produced by build_assignment.py. Fixes "
+            "which clips each persona answers, so outputs are named persona_XXXX.json. "
+            "Excludes --start-index/--end-index/--limit."
+        ),
+    )
+    parser.add_argument(
+        "--task-spec",
+        type=Path,
+        default=None,
+        help=(
+            "Externally authored persona x clip spec (see runs/spec.py). Each task names "
+            "its own persona, optionally its own prompt config, and its clips by manifest "
+            "record id; results are written as <task_id>.json under --persona-output-dir. "
+            "Excludes --assignment-json/--persona-prompt and --start-index/--end-index/--limit."
+        ),
+    )
+    parser.add_argument(
+        "--task-range",
+        default=None,
+        help=(
+            "Optional X-Y slice of the spec's tasks to run, 1-based and inclusive, in file "
+            "order. Scheduling only: it changes which tasks this process runs, never what "
+            "any of them does. Requires --task-spec."
+        ),
+    )
+    parser.add_argument(
+        "--audio-mix-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory holding any cached stacked-audio mixes. Defaults to a directory "
+            "derived from the output path. A mix depends only on the manifest, so runs "
+            "writing results elsewhere can point here to share one cache."
+        ),
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Rerun runs whose output file already exists instead of skipping them.",
+    )
+    parser.add_argument(
         "--no-audio",
         action="store_true",
         help="Run video-only inference by omitting separate audio inputs.",
@@ -257,6 +332,12 @@ def main() -> None:
             f"{args.end_index} < {args.start_index}"
         )
 
+    # Which file says who runs what: see runs/. Chosen and validated before
+    # anything is read, so a command line naming two designs at once costs a
+    # second rather than a place in the queue.
+    selector = select_run_plan(args)
+    selector.validate(args)
+
     input_json_path = args.input_json.expanduser().resolve()
     prompt_config_path = (
         mode.prompt_config_path if args.prompt_config is None else args.prompt_config
@@ -289,19 +370,10 @@ def main() -> None:
     )
 
     all_records = load_manifest_records(input_json_path)
-    end_index = len(all_records) - 1 if args.end_index is None else args.end_index
-    selected_records = [
-        (record_index, record)
-        for record_index, record in enumerate(all_records)
-        if args.start_index <= record_index <= end_index
-    ]
     print(f"[INFO] Loaded {len(all_records)} record(s) from {input_json_path}")
-    print(
-        f"[INFO] Selected manifest index range: "
-        f"{args.start_index}-{end_index} ({len(selected_records)} record(s))"
-    )
     print(f"[INFO] Backend: {args.backend}")
     print(f"[INFO] Mode: {mode.name}")
+    print(f"[INFO] Run selector: {selector.name}")
     print(f"[INFO] Model config: {model_config_path}")
     print(f"[INFO] Prompt config: {prompt_config_path}")
     print(f"[INFO] Output: {output_path}")
@@ -318,7 +390,42 @@ def main() -> None:
         f"min={model_config.min_video_frames} max={model_config.max_video_frames}"
     )
 
-    aggregated_audio_dir = output_path.parent / "_audio_mixes" / output_path.stem
+    run_ctx = RunContext(
+        args=args,
+        input_json_path=input_json_path,
+        output_path=output_path,
+        prompt_config_path=prompt_config_path,
+        prompt_config=prompt_config,
+        system_prompt=system_prompt,
+        persona_output_dir=(
+            None
+            if args.persona_output_dir is None
+            else args.persona_output_dir.expanduser().resolve()
+        ),
+        all_records=all_records,
+    )
+
+    try:
+        plan = selector.build_plan(run_ctx)
+        # Before record selection, so a resumed sweep prepares only the clips its
+        # remaining runs still need rather than re-resolving all of them.
+        plan = engine.drop_finished_runs(plan, overwrite=args.overwrite)
+        selected_records = selector.select_records(run_ctx, plan.runs)
+    except NothingToDo as reason:
+        # Not an error: an empty --task-range is the short last chunk of a tiled
+        # submission, and a fully finished set of outputs is a resumed sweep that
+        # has caught up.
+        print(f"[INFO] {reason}")
+        return
+
+    # A mix depends only on the record's own audio, never on the model or the
+    # persona, so runs that write results elsewhere should share one cache rather
+    # than re-mixing every clip into a new tree.
+    aggregated_audio_dir = (
+        args.audio_mix_dir.expanduser().resolve()
+        if args.audio_mix_dir is not None
+        else selector.default_audio_mix_dir(run_ctx)
+    )
     ctx = RecordContext(
         id_key=args.id_key,
         manifest_dir=input_json_path.parent,
@@ -350,32 +457,18 @@ def main() -> None:
     # problem surfaces before paying for the weights.
     model = load_model(args.backend, model_config.model_id, **model_config.load_kwargs)
 
-    results = engine.run_inference_pass(
-        prepared=prepared,
-        mode=mode,
-        system_prompt=system_prompt,
-        no_audio=args.no_audio,
-        model=model,
-        model_config=model_config,
-    )
-
-    summary = engine.build_summary(
+    engine.execute_runs(
         args=args,
         backend=args.backend,
-        mode=mode.name,
+        mode=mode,
+        plan=plan,
+        prepared=prepared,
+        model=model,
         model_config=model_config,
         input_json_path=input_json_path,
+        prompt_config=prompt_config,
         prompt_config_path=prompt_config_path,
         record_count=len(all_records),
         selected_record_count=len(selected_records),
-        end_index=end_index,
-        prepared=prepared,
-        results=results,
         aggregated_audio_dir=aggregated_audio_dir,
-    )
-    engine.write_results(
-        output_path,
-        summary=summary,
-        prepared=prepared,
-        results=results,
     )
