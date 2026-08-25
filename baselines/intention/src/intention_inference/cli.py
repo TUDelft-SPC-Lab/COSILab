@@ -315,13 +315,13 @@ def main() -> None:
             # Two very different causes, one symptom, and the second is the
             # confusing one: the path can be plainly there on the login node and
             # still be missing here, because only the shares in HOST_BIND_PATHS
-            # (job_scripts/lib/intention_job.sh) are bound into the container.
+            # (job_scripts/intention/cosilab_daic.sh) are bound into the container.
             raise FileNotFoundError(
                 f"{model_config_path}: backends.{args.backend}.model_id points at "
                 f"{weights_path}, which is not a directory here. Either the path is wrong "
                 f"-- fix it there, the weights are not a command-line flag -- or it exists "
                 f"on the host but is not bound into the container, in which case add its "
-                f"share to HOST_BIND_PATHS in job_scripts/lib/intention_job.sh."
+                f"share to HOST_BIND_PATHS in job_scripts/intention/cosilab_daic.sh."
             )
 
     if args.start_index < 0:

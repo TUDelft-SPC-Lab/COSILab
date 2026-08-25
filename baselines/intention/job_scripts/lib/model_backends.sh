@@ -1,7 +1,7 @@
 # Which model backends the intention job can run, and the one thing each needs
 # from the cluster that Python cannot work out: its container image.
 #
-# Sourced by the job body (lib/intention_job.sh), so a backend name is validated
+# Sourced by the job and by persona.sh, so a backend name is validated
 # at submit time -- a typo fails in a second instead of after hours in the queue.
 #
 # The name itself must match a key in models/registry.py BACKEND_MODULES.
@@ -32,7 +32,7 @@ intention_backend_is_known() {
 # needs a container flag of its own; returns 1 when the name is unknown, so
 # callers can print their own error.
 intention_backend_defaults() {
-    # Reset first: the array is expanded unquoted-but-guarded by the job body, and
+    # Reset first: the array is expanded unquoted-but-guarded by the job, and
     # a leftover value from an earlier call would silently apply to the next
     # backend.
     BACKEND_APPTAINER_ARGS=()
@@ -81,8 +81,8 @@ intention_backend_defaults() {
             #
             # 30B in bfloat16 is a much bigger residency than qwen7b, so the
             # first run is also where to check that the default --time and the
-            # single GPU in the stub are still enough; both are overridable on
-            # the sbatch line without editing the stub.
+            # single GPU in the job script are still enough; both are overridable
+            # on the sbatch line without editing the script.
             BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni.sif"
             ;;
         *)

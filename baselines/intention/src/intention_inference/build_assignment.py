@@ -32,7 +32,7 @@ reads -- and pins the interpreter by running inside the backend's apptainer imag
 
 Those scripts also FIX the design. ``--num-clips``, ``--personas-per-clip``,
 ``--clips-per-persona``, ``--persona-range`` and ``--clip-pool-range`` are set
-from the design block at the top of job_scripts/lib/build_assignment_job.sh
+from the design block at the top of job_scripts/intention/build_assignment_daic.sh
 (1000 clips, 6 personas per clip, 6 clips per persona, personas 1-1000) and
 passing them on the command line is rejected there, so the design changes by
 editing that block and rebuilding. The defaults below match it, but the job
@@ -42,7 +42,7 @@ as is ``--mode``, which the sweep must then match.
 
 EXAMPLES (via the job scripts)
 
-  # The fixed design, as declared in lib/build_assignment_job.sh.
+  # The fixed design, as declared in intention/build_assignment_daic.sh.
   sbatch job_scripts/intention/build_assignment_daic.sh
 
   # A different reproducible draw of that same design, written somewhere else.

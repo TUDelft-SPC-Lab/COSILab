@@ -83,6 +83,7 @@ def load_assignment(assignment_json_path: Path) -> dict[str, Any]:
     return {
         "persona_to_clips": normalized,
         "seed": meta.get("seed") if isinstance(meta, Mapping) else None,
+        "mode": meta.get("mode") if isinstance(meta, Mapping) else None,
     }
 
 
@@ -187,4 +188,3 @@ class AssignmentRuns(PersonaRunsSelector):
                 assignment_seed=loaded["seed"],
             ),
         )
-

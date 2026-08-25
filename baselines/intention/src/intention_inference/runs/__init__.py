@@ -22,13 +22,14 @@ clips does each of them see.
     spec.py        an externally authored spec, e.g. personas_prolific_ids.json:
                    the annotation pipeline decides, clips by record id.
     single.py      no persona at all, a contiguous slice of the manifest.
+    planning.py    packs whole assignment/spec runs for the Slurm launcher.
 
 The first two are nearly the same job read from two different files, so what they
 share lives in ``base.py`` and each module here holds only its own differences:
 how its JSON is read, which flags it accepts, and what it records about itself in
 the result file.
 
-Standard library only, so the login-node preflight in spec_sweep.sh can
+Standard library only, so the login-node preflight in persona.sh can
 import ``spec`` without a container.
 """
 

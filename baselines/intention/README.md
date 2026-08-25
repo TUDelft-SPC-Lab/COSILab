@@ -40,8 +40,10 @@ src/models/                         the model backends the task runs on
     shared.py                       plumbing both Qwen generations use
   qwen3omni/                        Qwen3-Omni-30B-A3B via transformers
 job_scripts/
-  intention/cosilab_daic.sh         Slurm stub: header + three host paths
-  lib/intention_job.sh              all job logic and options
+  intention/                        two inference entry points plus one design utility
+    cosilab_daic.sh                 one Slurm job WITHOUT personas
+    persona.sh                      multi-job launcher WITH personas
+    build_assignment_daic.sh        builds an optional balanced assignment
   lib/intention_paths.sh            data, manifest and output paths
   lib/model_backends.sh             backend -> container image
 ```
@@ -248,14 +250,71 @@ Any `model_id` shipping as a `/REPLACE_ME/...` placeholder -- `qwen7b`'s does --
 
 ## Submit on DAIC
 
-The job is split in two, so the environment and the logic are separate files:
+There are two inference entry points, each with one behavior. The assignment
+builder is a separate setup utility.
 
 ```text
-job_scripts/intention/cosilab_daic.sh   the SLURM header and three host paths
-job_scripts/lib/intention_job.sh        everything else, sourced by the stub
+job_scripts/intention/
+  cosilab_daic.sh           one Slurm job WITHOUT personas
+  persona.sh                multi-job launcher WITH personas
+  build_assignment_daic.sh  optional balanced-design builder
 ```
 
-The stub carries only what `sbatch` must read literally plus `PROJECT_ROOT`, `HOME_ROOT` and `SLURM_OUTPUT_ROOT`. A second environment is a second stub, not a second copy of the logic. Run `bash job_scripts/intention/cosilab_daic.sh --help` for the full option list.
+**`cosilab_daic.sh` — no personas.** Submit one inclusive manifest range as one
+job. It does not tile or submit itself:
+
+```bash
+sbatch job_scripts/intention/cosilab_daic.sh \
+    --backend gemma --mode pa --index-range 0-999
+```
+
+The output is `<manifest-stem>_<start>-<end>.json`. For roughly 6,000 plain
+clips, submit the handful of 800–1,000-clip ranges explicitly.
+
+**`persona.sh` — with personas.** Run it with `bash` on the login node. It reads
+exactly one source and launches all required GPU jobs:
+
+```bash
+# balanced assignment: dry run, then submit
+bash job_scripts/intention/persona.sh --backend qwen7b --mode pa \
+    --assignment-json /path/to/assignment.json
+bash job_scripts/intention/persona.sh --backend qwen7b --mode pa \
+    --assignment-json /path/to/assignment.json --submit
+
+# externally authored persona specification
+bash job_scripts/intention/persona.sh --backend gemma --mode pa \
+    --task-spec /path/to/personas_prolific_ids.json --submit
+```
+
+`--assignment-json` reads the balanced design (personas are `persona_NNNN.txt`,
+clips are manifest positions). `--task-spec` reads the annotation pipeline's
+external specification (persona text inline, clips by record id). The source is
+explicit; neither is silently chosen as a default.
+
+Jobs are packed by `--answers-per-job`, which defaults to 1,200 persona–clip
+answers. A source covering 2,000 clips with six personas per clip contains
+12,000 answers, so it becomes 10 jobs. If every persona has 200 clips, each job
+contains six complete personas. Complete persona runs are never split because
+each persona owns one output JSON; splitting one across concurrent jobs would
+cause competing writes. The clip set therefore belongs in the assignment/spec,
+while `persona.sh` only controls job packing.
+
+The launcher is dry-run by default and resumes safely: it skips packs whose
+outputs all exist, while the inference worker skips already-finished personas in
+a partially complete pack.
+
+There is no every-persona-every-clip option, here or in `cli.py` — that cross product is what the balanced design replaces.
+
+**`build_assignment_daic.sh` — the design.** CPU-only and short, so it runs as an sbatch job or straight on a login node. `--mode` is required: a design is only valid for the mode it was validated against, and `persona.sh` refuses one whose mode disagrees.
+
+```bash
+sbatch job_scripts/intention/build_assignment_daic.sh --mode pa
+bash   job_scripts/intention/build_assignment_daic.sh --mode pa --explain 2
+```
+
+`--explain N` prints where the first N candidate clips' media was looked for, then exits without building. Reach for it when validation rejects everything: the usual cause is a media/local prefix pair that stopped matching the manifest, which leaves the raw URL in place, so every clip looks missing when only a flag is wrong.
+
+Run any script with `--help` for its full option list.
 
 Default DAIC paths (`lib/intention_paths.sh` and `lib/model_backends.sh`):
 
@@ -273,16 +332,15 @@ Each backend gets its own image so a `transformers` bump for one model cannot si
 
 `PROJECT_ROOT` is bound to `/workspace` in the container and `PYTHONPATH` is set to `/workspace/baselines/intention/src`, so the job always runs the checkout's code rather than a copy baked into the image.
 
-Submit:
+Submit plain, single-job ranges:
 
 ```bash
-sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa
 sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen7b --mode fa --index-range 0-99
-sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen3omni30b --mode pa
-sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa --no-audio
+sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend qwen3omni30b --mode pa --index-range 0-999
+sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh --backend gemma --mode pa --index-range 1000-1999 --no-audio
 ```
 
-The SLURM header in the stub is shared by every backend and sized for the smallest, so it is not raised for the largest. `qwen3omni30b` is 30B parameters against `qwen7b`'s 7B; if the 10-hour default or the single card turns out not to be enough, override on the submission (`sbatch --time=20:00:00 ...`) rather than editing the stub for everyone.
+The SLURM header in the job script is shared by every backend and sized for the smallest, so it is not raised for the largest. `qwen3omni30b` is 30B parameters against `qwen7b`'s 7B; if the 10-hour default or the single card turns out not to be enough, override on the submission (`sbatch --time=20:00:00 ...`) rather than editing the script for everyone.
 
 Override input and output:
 
@@ -296,7 +354,7 @@ sbatch baselines/intention/job_scripts/intention/cosilab_daic.sh \
 
 The weights are not an option here: set `backends.<name>.model_id` in `model_config.json`.
 
-The job body:
+Each worker job:
 
 1. Validates the backend, the mode being present, SIF, checkout, the model config and the input manifest. The mode *name* is not validated here: the job script picks no image from it, so the list of valid names lives only in `modes/registry.py` and `cli.py` rejects a bad one.
 2. Maps remote media URL prefixes in the manifest to local DAIC filesystem paths.

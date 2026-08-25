@@ -51,7 +51,7 @@ are manifest record ids. An optional ``prompt_config`` is honoured here too,
 though the persona form does not usually carry one.
 
 Nothing heavier than the standard library is imported here, deliberately:
-spec_sweep.sh reads the spec through :func:`load_task_spec` on the login
+persona.sh reads the spec through :func:`load_task_spec` on the login
 node, so that a malformed spec fails at submit time rather than after N jobs have
 taken places in the queue -- and there is no container and no ML stack there.
 """

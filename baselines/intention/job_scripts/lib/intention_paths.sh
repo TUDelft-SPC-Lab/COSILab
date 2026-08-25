@@ -1,6 +1,6 @@
 # Single source of truth for where the intention baseline's data lives.
 #
-# Sourced by lib/intention_job.sh (via the env stub in job_scripts/intention/).
+# Sourced by every script in job_scripts/intention/.
 #
 # The media prefixes matter most. intention_inference/media.py rewrites each
 # covfee URL in the manifest by stripping the media prefix and joining the rest
@@ -27,8 +27,8 @@ INTENTION_PARTICIPANT_IMAGE_ROOT="${INTENTION_PIPELINE_ROOT}/participant_imgs"
 # them, and the externally authored spec the annotation pipeline emits.
 #
 # The assignment is built by intention/build_assignment_daic.sh and read by
-# sweep.sh; nothing in this repo writes the task spec -- it arrives from the
-# annotation pipeline and is read by spec_sweep.sh.
+# persona.sh; nothing in this repo writes the task spec -- it arrives from the
+# annotation pipeline and is read by persona.sh too.
 INTENTION_PERSONA_DIR="${INTENTION_PIPELINE_ROOT}/persona_prompts"
 INTENTION_ASSIGNMENT_JSON="${INTENTION_PIPELINE_ROOT}/ingroup_assignment.json"
 INTENTION_TASK_SPEC_JSON="${INTENTION_PIPELINE_ROOT}/personas_prolific_ids.json"

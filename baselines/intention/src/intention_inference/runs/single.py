@@ -3,7 +3,7 @@
 The selector that existed before personas did, and still the one to use for a plain
 sweep of the model over clips: no persona is folded in, the clips are whatever
 ``--start-index``/``--end-index``/``--limit`` select, and everything lands in the
-single file ``--output`` names. Driven by ``nopersona.sh``.
+single file ``--output`` names. Driven by ``cosilab_daic.sh``.
 
 The other two selectors refuse those three flags, because there the clips are chosen
 by a design or a spec and a range on top could only silently drop some of them.
