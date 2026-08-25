@@ -96,7 +96,7 @@
         "line: a request the model class does not implement leaves the towers on eager",
         "without raising."
       ],
-      "model_id": "/REPLACE_ME/models/Qwen2.5-Omni-7B",
+      "model_id": "/tudelft.net/staff-umbrella/GesBench/models/Qwen2.5-Omni-7B",
       "load": {
         "device_map": "auto",
         "dtype": "bfloat16",
