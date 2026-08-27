@@ -69,18 +69,29 @@ intention_backend_defaults() {
             # it, models/qwen/engine.py says so and QWEN_OMNI_UTILS_PATH is the
             # way to supply it from outside.
             #
+            # The -tf4.54 image replaced the 4.52 one built from
+            # apptainer/qwen2.5-omni-inference.def. 4.54 is the first release
+            # whose Qwen2.5-Omni vision SDPA path attends to the cu_seqlens
+            # chunks separately instead of over the combined visual sequence, so
+            # vision memory grows linearly in frame count rather than
+            # quadratically. Measured on a 2-GPU node with qwen7b, one image plus
+            # one 30 s clip, peak above the loaded-weights baseline:
+            # 4 frames 0.8 GiB, 8 1.5, 16 2.9, 32 5.9 -- log-log slopes 0.93,
+            # 0.97, 0.98. Re-measure with probe_qwen25_vision_daic.sh before
+            # pointing these backends at a different image.
+            #
             # Before the first run, confirm the image can reach both:
             #
             #   apptainer exec \
-            #     /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif \
+            #     /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif \
             #     python -c "import qwen_omni_utils, av, librosa, transformers;
             #                from transformers import Qwen2_5OmniForConditionalGeneration;
             #                print(transformers.__version__)"
-            BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif"
+            BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif"
             ;;
         qwen3omni30b)
             # Its own image again, not the qwen7b one: Qwen3OmniMoe* landed in
-            # transformers well after the 4.52 that image carries, and pinning
+            # transformers well after the 4.54 that image carries, and pinning
             # the two separately is what keeps a transformers bump for one
             # generation from silently changing what the other produces.
             #
@@ -91,7 +102,7 @@ intention_backend_defaults() {
             # Before the first run, confirm the image can reach all of it:
             #
             #   apptainer exec \
-            #     /tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni-inference.sif \
+            #     /tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni.sif \
             #     python -c "import qwen_omni_utils, av, librosa, transformers;
             #                from transformers import Qwen3OmniMoeForConditionalGeneration;
             #                print(transformers.__version__)"

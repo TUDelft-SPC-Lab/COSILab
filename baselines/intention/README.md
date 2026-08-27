@@ -324,12 +324,14 @@ DATA_ROOT      /tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/proce
 input_json     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/annotation_clips.json
 output_dir     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/model_responses/<backend>/<mode>
 gemma        SIF  /tudelft.net/staff-umbrella/neon/apptainer/gemma.sif
-qwen3b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
-qwen7b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
-qwen3omni30b SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni-inference.sif
+qwen3b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif
+qwen7b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif
+qwen3omni30b SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni.sif
 ```
 
-The two Qwen2.5 sizes share one image and backend class; only their configured weights differ. Qwen3-Omni gets a separate image because `qwen3omni30b` needs a newer `transformers` than the 4.52 in the Qwen2.5 image.
+The two Qwen2.5 sizes share one image and backend class; only their configured weights differ. Qwen3-Omni gets a separate image because `qwen3omni30b` needs a newer `transformers` than the 4.54 in the Qwen2.5 image.
+
+The Qwen2.5 image carries `transformers` 4.54.0, built from [apptainer/qwen2.5-omni-inference.def](apptainer/qwen2.5-omni-inference.def). 4.54 is the first release whose Qwen2.5-Omni vision SDPA path attends to the `cu_seqlens` chunks separately rather than over the combined visual sequence, so vision memory grows linearly in frame count instead of quadratically. Measured with `apptainer/probe_qwen25_vision_daic.sh` on two RTX PRO 6000s (`qwen7b`, one participant image plus one 30 s clip, peak above the loaded-weights baseline): 4 frames 0.8 GiB, 8 frames 1.5, 16 frames 2.9, 32 frames 5.9 — log-log slopes 0.93, 0.97, 0.98. Re-run that probe before pointing these backends at a rebuilt image.
 
 `PROJECT_ROOT` is bound to `/workspace` in the container and `PYTHONPATH` is set to `/workspace/baselines/intention/src`, so the job always runs the checkout's code rather than a copy baked into the image.
 

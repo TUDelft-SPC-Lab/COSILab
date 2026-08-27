@@ -146,12 +146,13 @@ class QwenOmniModel(BaseMultimodalModel):
             flush=True,
         )
         # Left unset by default, which is not the same as choosing eager: it
-        # means whatever this transformers decides, and on the 4.52 in the qwen
-        # image that is eager for every tower even though the top-level config
-        # reports sdpa. Eager materialises a full N-by-N score matrix per
-        # attention layer, and the vision tower attends over patches -- four per
-        # visual token -- so its matrix is sixteen times the one the token count
-        # suggests. That is what put a multi-turn video prompt over a 96 GB card.
+        # means whatever this transformers decides, and on 4.52 -- what the qwen
+        # image carried before the 4.54 rebuild -- that was eager for every tower
+        # even though the top-level config reported sdpa. Eager materialises a
+        # full N-by-N score matrix per attention layer, and the vision tower
+        # attends over patches -- four per visual token -- so its matrix is
+        # sixteen times the one the token count suggests. That is what put a
+        # multi-turn video prompt over a 96 GB card.
         #
         # Set it in the task's model_config.json under backends.<name>.load. The
         # line below reports what each tower actually resolved to, so a request
