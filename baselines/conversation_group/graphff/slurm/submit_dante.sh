@@ -25,6 +25,11 @@
 #   OVERWRITE=1               0 refuses to run when a fold directory exists
 #   USE_GPU=0                 1 requests a GPU and runs TensorFlow on it
 #   DRY_RUN=0                 1 prints the sbatch lines without submitting
+#   MAIL_USER=zli33@tudelft.nl  empty disables mail entirely
+#   MAIL_TYPE=END,FAIL        one mail per array; add ARRAY_TASKS for one per fold
+#   ARCH_SEED=                seed for DANTE's random architecture search; empty
+#                             derives it from dataset/run_id/fold (reproducible),
+#                             -1 draws from OS entropy
 #   DANTE_DATA_ROOT=...       benchmark artifacts to read
 #   DANTE_EXPERIMENT_ROOT=... where runs are written
 #   SLURM_LOG_DIR=...         Slurm stdout/stderr
@@ -47,6 +52,11 @@ SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/dante}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 USE_GPU="${USE_GPU:-0}"
+# END,FAIL without ARRAY_TASKS is one mail per submitted array, not one per fold
+# `-` not `:-`: MAIL_USER= (explicitly empty) means "no mail", not "use the default"
+MAIL_USER="${MAIL_USER-zli33@tudelft.nl}"
+MAIL_TYPE="${MAIL_TYPE:-END,FAIL}"
+ARCH_SEED="${ARCH_SEED:-}"
 
 ALL_CAMS=(06 08 10 01 03)
 
@@ -136,6 +146,15 @@ if [[ -n "${SBATCH_ARGS:-}" ]]; then
   read -r -a SBATCH_EXTRA_ARGS <<< "$SBATCH_ARGS"
 fi
 
+# mail settings live here rather than only in the #SBATCH header so they can be
+# changed per submission; an empty MAIL_USER turns notifications off
+SBATCH_MAIL_ARGS=()
+if [[ -n "$MAIL_USER" ]]; then
+  SBATCH_MAIL_ARGS=(--mail-user="$MAIL_USER" --mail-type="$MAIL_TYPE")
+else
+  SBATCH_MAIL_ARGS=(--mail-type=NONE)
+fi
+
 # Slurm rejects a job outright if the --output directory does not already exist.
 # Normally it is already there, so only try to create it when it is missing, and
 # say something useful rather than leaking a raw mkdir error when we cannot.
@@ -159,6 +178,8 @@ echo "cameras:         ${DATASETS[*]}"
 echo "folds:           $ARRAY_SPEC"
 echo "gpu:             $USE_GPU"
 echo "overwrite:       $OVERWRITE"
+echo "arch seed:       ${ARCH_SEED:-derived from dataset/run_id/fold}"
+echo "mail:            ${MAIL_USER:-<disabled>} (${MAIL_TYPE})"
 echo
 
 for dataset in "${DATASETS[@]}"; do
@@ -174,6 +195,9 @@ for dataset in "${DATASETS[@]}"; do
   job_name="dante-$(basename "$dataset")"
   export_arg="ALL,DATASET=$dataset,RUN_ID=$RUN_ID,OVERWRITE=$OVERWRITE,USE_GPU=$USE_GPU"
   export_arg="$export_arg,DANTE_DATA_ROOT=$DANTE_DATA_ROOT,DANTE_EXPERIMENT_ROOT=$DANTE_EXPERIMENT_ROOT"
+  if [[ -n "$ARCH_SEED" ]]; then
+    export_arg="$export_arg,ARCH_SEED=$ARCH_SEED"
+  fi
   if [[ -n "${EXTRA_EXPORTS:-}" ]]; then
     export_arg="$export_arg,$EXTRA_EXPORTS"
   fi
@@ -186,6 +210,7 @@ for dataset in "${DATASETS[@]}"; do
     --output="$SLURM_LOG_DIR/slurm-%x-%A_%a.out"
     --error="$SLURM_LOG_DIR/slurm-%x-%A_%a.err"
   )
+  sbatch_args+=("${SBATCH_MAIL_ARGS[@]}")
   if [[ ${#SBATCH_RESOURCE_ARGS[@]} -gt 0 ]]; then
     sbatch_args+=("${SBATCH_RESOURCE_ARGS[@]}")
   fi

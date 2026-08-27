@@ -26,6 +26,8 @@
 #   RUN_ID=1                    output goes to <exp_root>/exp_$RUN_ID/...
 #   OVERWRITE=1                 0 refuses to run when a fold directory exists
 #   DRY_RUN=0                   1 prints the sbatch lines without submitting
+#   MAIL_USER=zli33@tudelft.nl  empty disables mail entirely
+#   MAIL_TYPE=END,FAIL          one mail per array; add ARRAY_TASKS for one per fold
 #   GRAPHFF_DATA_ROOT=...       benchmark artifacts to read
 #   GRAPHFF_EXPERIMENT_ROOT=... where runs are written
 #   SLURM_LOG_DIR=...           Slurm stdout/stderr
@@ -50,6 +52,10 @@ GRAPHFF_EXPERIMENT_ROOT="${GRAPHFF_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/
 SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/lstm}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
+# END,FAIL without ARRAY_TASKS is one mail per submitted array, not one per fold
+# `-` not `:-`: MAIL_USER= (explicitly empty) means "no mail", not "use the default"
+MAIL_USER="${MAIL_USER-zli33@tudelft.nl}"
+MAIL_TYPE="${MAIL_TYPE:-END,FAIL}"
 # empty by default: the old gpu[36-45] default was inherited from a previous
 # cluster layout and names nodes that do not exist in insy/general
 EXCLUDE_NODES="${EXCLUDE_NODES:-}"
@@ -136,6 +142,15 @@ if [[ -n "$EXCLUDE_NODES" ]]; then
   SBATCH_EXTRA_ARGS+=(--exclude="$EXCLUDE_NODES")
 fi
 
+# mail settings live here rather than only in the #SBATCH header so they can be
+# changed per submission; an empty MAIL_USER turns notifications off
+SBATCH_MAIL_ARGS=()
+if [[ -n "$MAIL_USER" ]]; then
+  SBATCH_MAIL_ARGS=(--mail-user="$MAIL_USER" --mail-type="$MAIL_TYPE")
+else
+  SBATCH_MAIL_ARGS=(--mail-type=NONE)
+fi
+
 # Slurm rejects a job outright if the --output directory does not already exist.
 # Normally it is already there, so only try to create it when it is missing, and
 # say something useful rather than leaking a raw mkdir error when we cannot.
@@ -159,6 +174,7 @@ echo "cameras:         ${DATASETS[*]}"
 echo "folds:           $ARRAY_SPEC"
 echo "overwrite:       $OVERWRITE"
 echo "exclude nodes:   ${EXCLUDE_NODES:-<none>}"
+echo "mail:            ${MAIL_USER:-<disabled>} (${MAIL_TYPE})"
 echo
 
 for dataset in "${DATASETS[@]}"; do
@@ -182,6 +198,7 @@ for dataset in "${DATASETS[@]}"; do
     --output="$SLURM_LOG_DIR/slurm-%x-%A_%a.out"
     --error="$SLURM_LOG_DIR/slurm-%x-%A_%a.err"
   )
+  sbatch_args+=("${SBATCH_MAIL_ARGS[@]}")
   if [[ ${#SBATCH_EXTRA_ARGS[@]} -gt 0 ]]; then
     sbatch_args+=("${SBATCH_EXTRA_ARGS[@]}")
   fi

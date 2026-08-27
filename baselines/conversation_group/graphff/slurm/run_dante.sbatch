@@ -10,6 +10,9 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --output=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.out
 #SBATCH --error=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.err
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=zli33@tudelft.nl
+#SBATCH --signal=B:USR1@120
 #
 # One DANTE camera, one array task per fold. Normally submitted through
 # slurm/submit_dante.sh, which resolves the camera number, sets GPU/CPU
@@ -26,9 +29,19 @@
 # The fold comes from the array index. Do NOT pass FOLD to select a single fold,
 # it would apply to every task; narrow the array instead (--array=2-2).
 #
+# Mail goes out once per array (END,FAIL), not once per task; submit_dante.sh
+# overrides --mail-user/--mail-type from MAIL_USER/MAIL_TYPE.
+#
+# Every fold ends with a [FOLD STATUS] line in its fold log and a matching
+# <logs>/fold_<n>.status file, so COMPLETED / TIMEOUT / FAILED / CANCELLED is
+# readable without guessing from where the log stops.
+#
 # Environment overrides:
 #   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/$DATASET/fold_$FOLD
 #   OVERWRITE=1          # 0 refuses to run when that fold directory already exists
+#   ARCH_SEED=           # seed for the random architecture search; empty means
+#                        # derive it from dataset/run_id/fold (reproducible),
+#                        # -1 draws from OS entropy (old behaviour)
 #   USE_GPU=0            # 1 runs TensorFlow on a GPU (needs --gres=gpu:1 too)
 #   DANTE_DATA_ROOT=/path/to/DANTE
 #   DANTE_EXPERIMENT_ROOT=/path/to/experiments
@@ -65,6 +78,7 @@ MIN_DELTA="${MIN_DELTA:-0.0}"
 F1_EVAL_EVERY="${F1_EVAL_EVERY:-10}"
 NO_POINTNET="${NO_POINTNET:-0}"
 SYMMETRIC="${SYMMETRIC:-0}"
+ARCH_SEED="${ARCH_SEED:-}"
 DANTE_USE_GPU="${USE_GPU:-${DANTE_USE_GPU:-0}}"
 DANTE_PYTHON_BIN="${DANTE_PYTHON_BIN:-}"
 CACHE_ROOT="${CACHE_ROOT:-$PROJECT_ROOT/logs/cache}"
@@ -93,7 +107,83 @@ cleanup_scratch() {
       ;;
   esac
 }
-trap cleanup_scratch EXIT
+
+# How the fold ended has to be readable from the log itself: a task killed at the
+# wall clock limit simply stops mid-epoch and looks exactly like one still
+# running. --signal=B:USR1@120 warns this shell shortly before the limit, so the
+# SIGTERM that follows can be reported as TIMEOUT rather than as a cancellation.
+FOLD_START_EPOCH="$(date +%s)"
+TIMEOUT_WARNED=0
+TERM_SIGNALLED=0
+
+on_timeout_warning() {
+  TIMEOUT_WARNED=1
+  echo "[FOLD WARN] wall clock limit is near; Slurm terminates this task shortly"
+}
+on_terminate() {
+  TERM_SIGNALLED=1
+}
+trap on_timeout_warning USR1
+trap on_terminate TERM INT
+
+# Written to the Slurm output and appended to the fold log, so either file on its
+# own says how the fold ended. The fold log may not exist yet when an early
+# preflight check fails, hence the guard.
+log_status_line() {
+  echo "$1"
+  if [[ -n "${FOLD_LOG:-}" && -f "${FOLD_LOG:-}" ]]; then
+    echo "$1" >> "$FOLD_LOG"
+  fi
+}
+
+on_exit() {
+  local rc=$?
+  local end_epoch elapsed status
+  end_epoch="$(date +%s)"
+  elapsed="$(printf '%02d:%02d:%02d' \
+    $(( (end_epoch - FOLD_START_EPOCH) / 3600 )) \
+    $(( (end_epoch - FOLD_START_EPOCH) % 3600 / 60 )) \
+    $(( (end_epoch - FOLD_START_EPOCH) % 60 )))"
+
+  # a SIGTERM decides the outcome even when the pipeline still reports 0: bash
+  # keeps running after a trapped signal, so rc alone would call a killed fold
+  # completed
+  if [[ "$TERM_SIGNALLED" == "1" && "$TIMEOUT_WARNED" == "1" ]]; then
+    status=TIMEOUT
+  elif [[ "$TERM_SIGNALLED" == "1" ]]; then
+    status=CANCELLED
+  elif [[ "$rc" -eq 0 ]]; then
+    status=COMPLETED
+  else
+    status=FAILED
+  fi
+
+  log_status_line "[FOLD STATUS] model=dante dataset=${DATASET:-NA} fold=${FOLD:-NA} run_id=${RUN_ID:-NA} status=$status exit_code=$rc elapsed=$elapsed end=$(date -Is) job=${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-NA}}_${SLURM_ARRAY_TASK_ID:-NA} host=$(hostname)"
+
+  if [[ -n "${DATASET_LOG_DIR:-}" && -d "${DATASET_LOG_DIR:-}" ]]; then
+    {
+      echo "status=$status"
+      echo "exit_code=$rc"
+      echo "model=dante"
+      echo "dataset=${DATASET:-NA}"
+      echo "fold=${FOLD:-NA}"
+      echo "run_id=${RUN_ID:-NA}"
+      echo "job=${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-NA}}_${SLURM_ARRAY_TASK_ID:-NA}"
+      echo "host=$(hostname)"
+      echo "elapsed=$elapsed"
+      echo "end=$(date -Is)"
+    } > "$DATASET_LOG_DIR/fold_${FOLD}.status"
+  fi
+
+  cleanup_scratch
+
+  # Slurm (and the FAIL mail) must see a non-zero status for anything that did
+  # not finish, including a kill the pipeline swallowed
+  if [[ "$status" != "COMPLETED" && "$rc" -eq 0 ]]; then
+    exit 1
+  fi
+}
+trap on_exit EXIT
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
@@ -120,6 +210,12 @@ FOLD_LOG="$DATASET_LOG_DIR/fold_${FOLD}.log"
 # Apptainer needs both bind sources to exist on the host before the exec.
 mkdir -p "$DANTE_EXPERIMENT_ROOT" "$DATASET_LOG_DIR"
 
+# start the fold log fresh, then append everything else; the begin/status pair
+# brackets the run so a truncated log is obvious
+: > "$FOLD_LOG"
+rm -f "$DATASET_LOG_DIR/fold_${FOLD}.status"
+log_status_line "[FOLD BEGIN] model=dante dataset=$DATASET fold=$FOLD run_id=$RUN_ID start=$(date -Is) job=${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-NA}}_${SLURM_ARRAY_TASK_ID:-NA} host=$(hostname) time_limit=$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | sed -n 's/.*TimeLimit=\([^ ]*\).*/\1/p' | head -n 1)"
+
 echo "HOST=$(hostname) JOB=${SLURM_JOB_ID:-NA} ARRAY=${SLURM_ARRAY_JOB_ID:-NA}_${SLURM_ARRAY_TASK_ID:-NA}"
 echo "project_root=$PROJECT_ROOT"
 echo "apptainer_image=$APPTAINER_IMAGE"
@@ -140,6 +236,7 @@ echo "min_delta=$MIN_DELTA"
 echo "f1_eval_every=$F1_EVAL_EVERY"
 echo "no_pointnet=$NO_POINTNET"
 echo "symmetric=$SYMMETRIC"
+echo "arch_seed=${ARCH_SEED:-derived from dataset/run_id/fold}"
 echo "dante_use_gpu=$DANTE_USE_GPU"
 echo "dante_python_bin=${DANTE_PYTHON_BIN:-auto}"
 echo "cache_root=$CACHE_ROOT"
@@ -162,6 +259,7 @@ apptainer_env_args=(
   --env F1_EVAL_EVERY="$F1_EVAL_EVERY"
   --env NO_POINTNET="$NO_POINTNET"
   --env SYMMETRIC="$SYMMETRIC"
+  --env ARCH_SEED="$ARCH_SEED"
   --env DANTE_USE_GPU="$DANTE_USE_GPU"
   --env DANTE_PYTHON_BIN="$DANTE_PYTHON_BIN"
   --env PYTHONPATH="$DANTE_ROOT/deep_fformation:$DANTE_ROOT/datasets:$PROJECT_ROOT"
@@ -282,4 +380,4 @@ PY
       args+=("--no-overwrite")
     fi
     "${PYBIN}" run_models.py "${args[@]}"
-  ' 2>&1 | tee "$FOLD_LOG"
+  ' 2>&1 | tee -a "$FOLD_LOG"

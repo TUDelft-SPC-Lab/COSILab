@@ -1,5 +1,8 @@
 import numpy as np
 
+import os
+import zlib
+
 from utils import load_data, train_and_save_model
 import dante_paths
 
@@ -11,9 +14,32 @@ Use the --no_pointnet flag to remove the Context Transform.
 Use the --symmetric flag to cause the Dyad Tranform to use the same type of
 symmetric architecture as the Context Transform.
 
+The architecture is drawn at random, so the draw is seeded to keep a run
+reproducible; see resolve_arch_seed below.
+
 Example usage:
 python run_models.py -d mingling1/cam06 -f 0
 """
+
+
+# The architecture search below draws from np.random. Left unseeded, re-running
+# the same fold trains a different network, so the seed is derived from the
+# identity of the run: the same (dataset, run_id, fold) redraws the same
+# architecture, while different folds still get different ones, which is what
+# the original per-fold resampling was for.
+def resolve_arch_seed(explicit_seed, dataset, run_id, fold):
+    if explicit_seed is None:
+        env_seed = os.environ.get('ARCH_SEED', '').strip()
+        if env_seed != '':
+            explicit_seed = int(env_seed)
+
+    if explicit_seed is None:
+        key = "{}|{}|{}".format(dataset, run_id, fold)
+        return zlib.crc32(key.encode('utf-8')) & 0x7FFFFFFF
+    if explicit_seed < 0:
+        # opt out: sample from OS entropy, the old non-reproducible behaviour
+        return None
+    return explicit_seed
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -31,6 +57,10 @@ def get_args():
     parser.add_argument('--run_id', type=str, default=dante_paths.get_run_id(),
         help="run identifier; output goes to <experiment_root>/exp_<run_id>/<dataset>/fold_<fold> "
              "(default from RUN_ID, else 1)")
+    parser.add_argument('--arch_seed', type=int, default=None,
+        help="seed for the random architecture search (default from ARCH_SEED, else "
+             "derived from dataset/run_id/fold so a re-run redraws the same "
+             "architecture; pass -1 to draw from OS entropy instead)")
     parser.add_argument('--overwrite', dest='overwrite', action='store_true', default=True,
         help="replace an existing fold output directory (default)")
     parser.add_argument('--no-overwrite', dest='overwrite', action='store_false',
@@ -50,6 +80,14 @@ if __name__ == "__main__":
     print("experiment root: ", dante_paths.get_experiment_root())
     print("fold data dir:   ", fold_dir)
     test, train, val = load_data(str(fold_dir))
+
+    arch_seed = resolve_arch_seed(args.arch_seed, args.dataset, args.run_id, fold)
+    if arch_seed is None:
+        print("arch seed:        none (architecture drawn from OS entropy, not reproducible)")
+    else:
+        print("arch seed:       ", arch_seed)
+        np.random.seed(arch_seed)
+
     for j in range(1):
         # set model architecture
         # Context tranform in the paper
@@ -92,4 +130,4 @@ if __name__ == "__main__":
         symmetric=args.symmetric, batch_size=args.batch_size,
         patience=args.patience, min_delta=args.min_delta,
         f1_eval_every=args.f1_eval_every, run_id=args.run_id,
-        overwrite=args.overwrite)
+        overwrite=args.overwrite, arch_seed=arch_seed)

@@ -374,7 +374,7 @@ def train_and_save_model(global_filters, individual_filters, combined_filters,
     train, val, test, epochs, dataset, reg=0.0000001, dropout=.35, fold_num=0,
     no_pointnet=False, symmetric=False, batch_size=1024, patience=50,
     min_delta=0.0, f1_eval_every=10, run_id=dante_paths.DEFAULT_RUN_ID,
-    overwrite=True):
+    overwrite=True, arch_seed=None):
 
     # ensures repeatability
     tf.set_random_seed(0)
@@ -393,7 +393,8 @@ def train_and_save_model(global_filters, individual_filters, combined_filters,
         "\nepochs= " + str(epochs) + "\nbatch_size= " + str(batch_size) +
         "\npatience= " + str(patience) + "\nmin_delta= " + str(min_delta) +
         "\nearly_stop_monitor= val_mean_squared_error" +
-        "\nf1_eval_every= " + str(f1_eval_every))
+        "\nf1_eval_every= " + str(f1_eval_every) +
+        "\narch_seed= " + ("none" if arch_seed is None else str(arch_seed)))
 
     best_val_mses = []
     best_val_f1s_one = []
