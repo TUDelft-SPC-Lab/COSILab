@@ -48,7 +48,7 @@ fi
 SCRIPT="$PROJECT_ROOT/slurm/run_dante.sbatch"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
 DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments}"
-SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/z.li-25/slurm_outputs/dante}"
+SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/dante}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 USE_GPU="${USE_GPU:-0}"
