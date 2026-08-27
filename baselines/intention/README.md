@@ -324,8 +324,8 @@ DATA_ROOT      /tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/proce
 input_json     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/annotation_clips.json
 output_dir     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/model_responses/<backend>/<mode>
 gemma        SIF  /tudelft.net/staff-umbrella/neon/apptainer/gemma.sif
-qwen3b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif
-qwen7b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif
+qwen3b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
+qwen7b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
 qwen3omni30b SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen3-omni.sif
 ```
 
