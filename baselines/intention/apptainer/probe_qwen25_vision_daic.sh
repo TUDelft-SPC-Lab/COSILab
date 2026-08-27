@@ -13,7 +13,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="/home/zli33/linuxhome/projects/COSILab"
-SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif"
+SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif"
 VIDEO="/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/video_clips_30s_timestamp_fixed/seg_134500_134530/camera_06-mingle_session_1.mp4"
 IMAGE="/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/participant_imgs/participant_10.png"
 BACKEND="qwen3b"
