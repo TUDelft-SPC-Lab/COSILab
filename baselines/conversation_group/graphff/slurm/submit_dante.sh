@@ -25,7 +25,7 @@
 #   OVERWRITE=1               0 refuses to run when a fold directory exists
 #   USE_GPU=0                 1 requests a GPU and runs TensorFlow on it
 #   DRY_RUN=0                 1 prints the sbatch lines without submitting
-#   MAIL_USER=zli33@tudelft.nl  empty disables mail entirely
+#   MAIL_USER=z.li-25@tudelft.nl  empty disables mail entirely
 #   MAIL_TYPE=END,FAIL        one mail per array; add ARRAY_TASKS for one per fold
 #   ARCH_SEED=                seed for DANTE's random architecture search; empty
 #                             derives it from dataset/run_id/fold (reproducible),
@@ -48,13 +48,13 @@ fi
 SCRIPT="$PROJECT_ROOT/slurm/run_dante.sbatch"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
 DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments}"
-SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/dante}"
+SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/z.li-25/slurm_outputs/dante}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 USE_GPU="${USE_GPU:-0}"
 # END,FAIL without ARRAY_TASKS is one mail per submitted array, not one per fold
 # `-` not `:-`: MAIL_USER= (explicitly empty) means "no mail", not "use the default"
-MAIL_USER="${MAIL_USER-zli33@tudelft.nl}"
+MAIL_USER="${MAIL_USER-z.li-25@tudelft.nl}"
 MAIL_TYPE="${MAIL_TYPE:-END,FAIL}"
 ARCH_SEED="${ARCH_SEED:-}"
 

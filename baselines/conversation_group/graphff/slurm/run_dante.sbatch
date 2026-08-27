@@ -11,7 +11,7 @@
 #SBATCH --output=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.out
 #SBATCH --error=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.err
 #SBATCH --mail-type=END,FAIL
-#SBATCH --mail-user=zli33@tudelft.nl
+#SBATCH --mail-user=z.li-25@tudelft.nl
 #SBATCH --signal=B:USR1@120
 #
 # One DANTE camera, one array task per fold. Normally submitted through
