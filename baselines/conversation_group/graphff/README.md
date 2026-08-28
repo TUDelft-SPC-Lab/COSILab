@@ -481,6 +481,65 @@ for how many fold runs are behind it. Nothing is recomputed: the numbers come
 from each fold's `metrics_summary.csv`, written at the end of training using the
 restored best-validation-MSE weights.
 
+`_metrics_by_camera.csv`, `_metrics_by_session.csv` and `_metrics_overall.csv`
+cover models scored on the camera they were trained on. Their pooled `std` above
+camera level mixes fold-to-fold and camera-to-camera variation, so prefer the
+matrix below when reporting.
+
+### Camera x camera matrix
+
+Both aggregators also write a 5x5 generalisation matrix, rows the training
+camera and columns the evaluation camera, cells `mean ± std` over that row's five
+folds. The std is therefore always fold-level, and camera-level variance is read
+off by comparing cells:
+
+```text
+<prefix>_matrix_long.csv     tidy: one row per (metric, train camera, test camera)
+<prefix>_matrix_f1_1.csv     rendered 5x5 table, one file per metric
+<prefix>_matrix_f1_2_3.csv
+<prefix>_matrix_auc.csv
+```
+
+One rule covers the whole matrix: the model trained on camera r fold k is scored
+on **camera c's fold-k held-out test block**, never on all of camera c. Cameras
+inside a session film the same event, so scoring a whole camera would feed the
+model the very moments it trained on from another angle. Restricting to fold k's
+block keeps the evaluated timestamps out of that fold's training data in every
+column, and makes all 25 cells the same size instead of comparing one block on
+the diagonal against a full recording off it. The diagonal is the `c == r` case
+of that same rule, so it stays identical to `_metrics_by_camera.csv` at
+`split=test`.
+
+This assumes both cameras' fold-k blocks cover the same moments. Folds are cut as
+equal fractions of each camera's own timeline, so cameras whose feature files
+span different frames leave a residual overlap that the aggregator cannot detect.
+
+Cells take the `test` split of each result file, falling back to a whole-camera
+`all`/`full` only if that is all a file offers — those cells are flagged in the
+tidy file's `fold_matched` column and named in a warning, since within a session
+they include training time and are not comparable to the rest of the table.
+`--matrix-split <label>` forces one label everywhere.
+
+Cameras are listed flat in session order (`cam06, cam08, cam10` then `cam01,
+cam03`), so a session is a contiguous block rather than its own aggregation
+level. The tidy file labels each cell `diagonal`, `within_session` or
+`cross_session`: within-session cells measure viewpoint robustness on held-out
+time, and the two cross-session blocks are unseen people as well.
+
+Cross-camera evaluation results are read from wherever they sit under
+`fold_<k>/`, identified by any one of:
+
+```text
+a test_camera / eval_camera / test_dataset / eval_dataset column in the CSV
+a subdirectory named eval_cam08 or eval_mingling1_cam08
+a filename token _eval=cam08, _test=mingling1_cam08 or _eval_on_cam08
+```
+
+A file with no such marker is treated as scoring its own camera, so a run with
+only in-repo training output yields a diagonal-only matrix plus a warning naming
+the 20 empty cells, rather than an error. Options: `--matrix-metrics`,
+`--matrix-split`, `--matrix-decimals`.
+
 ## Main Files
 
 ```text
@@ -496,6 +555,7 @@ evaluate_scene.py                            Scene-level group evaluation
 dominant_sets.py                             Dominant set clustering
 scripts/aggregate_lstm_mingling_results.py   LSTM result aggregation
 scripts/aggregate_dante_mingling_results.py  DANTE result aggregation
+scripts/camera_matrix.py                     Camera x camera matrix, shared by both
 DANTE-master/datasets/prepare_mingling.py    DANTE DS_utils generation
 DANTE-master/datasets/reformat_data.py       DANTE pairwise artifact generation
 DANTE-master/datasets/build_dataset.py       DANTE fold pickle generation

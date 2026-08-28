@@ -12,6 +12,8 @@ import pandas as pd
 
 # reuse the root defaults rather than duplicating them
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import camera_matrix  # noqa: E402
 from graphff_paths import get_experiment_root, get_run_id  # noqa: E402
 
 
@@ -76,31 +78,54 @@ def parse_args() -> argparse.Namespace:
         metavar="SESSION/CAMERA",
         help="Exclude a camera, for example mingling2/cam03. Can be repeated.",
     )
+    parser.add_argument(
+        "--matrix-metrics",
+        default=",".join(camera_matrix.DEFAULT_MATRIX_METRICS),
+        help="Comma-separated metrics to render as train-camera x test-camera "
+             "matrices (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--matrix-split",
+        default=None,
+        help="Force every matrix cell to use this split label. By default every "
+             "cell prefers 'test', the fold's held-out block on the evaluation "
+             "camera, falling back to a whole-camera 'all'/'full' with a warning.",
+    )
+    parser.add_argument(
+        "--matrix-decimals",
+        type=int,
+        default=3,
+        help="Decimals in the rendered 'mean ± std' cells (default: %(default)s).",
+    )
     return parser.parse_args()
 
 
 def parse_file(path: Path) -> pd.DataFrame:
     # run id, session, camera and fold come from the directory layout; the frame
     # stride is only recorded in the filename
+    # the optional subdirectory leaves room for cross-camera evaluation files
     path_match = re.search(
-        r"/exp_([^/]+)/(mingling[12])/(cam\d+)/fold_(\d+)/[^/]+\.csv$",
+        r"/exp_([^/]+)/(mingling[12])/(cam\d+)/fold_(\d+)/(?:[^/]+/)?[^/]+\.csv$",
         path.as_posix(),
     )
     if not path_match:
         raise ValueError(f"Unexpected metrics path: {path}")
     run_id, session, camera, fold = path_match.groups()
 
-    name_match = re.search(r"_stride=(\d+)\.csv$", path.name)
+    # the stride token is not always last once an eval marker is appended
+    name_match = re.search(r"_stride=(\d+)", path.name)
     stride = int(name_match.group(1)) if name_match else 1
 
     df = pd.read_csv(path)
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    # session/camera are the *training* camera; test_camera is where it was scored
     df.insert(0, "pipeline", "LSTM")
     df.insert(1, "session", session)
     df.insert(2, "camera", camera)
     df.insert(3, "fold", int(fold))
     df.insert(4, "run_id", run_id)
     df.insert(5, "frame_stride", stride)
+    df = camera_matrix.add_test_camera_columns(df, path, camera)
     df["source_file"] = str(path)
     return df
 
@@ -160,8 +185,9 @@ def main() -> None:
     args = parse_args()
     experiment_glob = "exp_*" if args.all_runs else "exp_" + str(args.run_id)
     search_root = args.models_root / experiment_glob
+    # the trailing ** also picks up per-evaluation-camera subdirectories
     files = sorted(args.models_root.glob(
-        experiment_glob + "/mingling*/cam*/fold_*/*metrics_summary*.csv"))
+        experiment_glob + "/mingling*/cam*/fold_*/**/*metrics_summary*.csv"))
     if not files:
         raise SystemExit(
             f"No metrics_summary CSV files found under {search_root}\n"
@@ -186,7 +212,10 @@ def main() -> None:
             .isin(excluded)
         ].reset_index(drop=True)
 
-    validate_inputs(long_df, args.allow_incomplete, excluded)
+    # the three pooled aggregates keep their original meaning: models scored on
+    # the camera they were trained on. Cross-camera results only feed the matrix.
+    self_df = long_df[long_df["self_eval"]].reset_index(drop=True)
+    validate_inputs(self_df, args.allow_incomplete, excluded)
 
     out_root = args.output_root
     out_root.mkdir(parents=True, exist_ok=True)
@@ -196,14 +225,22 @@ def main() -> None:
     overall_path = out_root / f"{args.out_prefix}_metrics_overall.csv"
 
     long_df.to_csv(long_path, index=False)
-    aggregate(long_df, ["pipeline", "session", "camera", "split"]).to_csv(camera_path, index=False)
-    aggregate(long_df, ["pipeline", "session", "split"]).to_csv(session_path, index=False)
-    aggregate(long_df, ["pipeline", "split"]).to_csv(overall_path, index=False)
+    aggregate(self_df, ["pipeline", "session", "camera", "split"]).to_csv(camera_path, index=False)
+    aggregate(self_df, ["pipeline", "session", "split"]).to_csv(session_path, index=False)
+    aggregate(self_df, ["pipeline", "split"]).to_csv(overall_path, index=False)
 
     print(f"Wrote {long_path}")
     print(f"Wrote {camera_path}")
     print(f"Wrote {session_path}")
     print(f"Wrote {overall_path}")
+
+    matrix_metrics = [name.strip() for name in args.matrix_metrics.split(",") if name.strip()]
+    for matrix_path in camera_matrix.write_matrix_outputs(
+        long_df, out_root, args.out_prefix,
+        metrics=matrix_metrics, split_override=args.matrix_split,
+        decimals=args.matrix_decimals,
+    ):
+        print(f"Wrote {matrix_path}")
 
 
 if __name__ == "__main__":
