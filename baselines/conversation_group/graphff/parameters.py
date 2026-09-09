@@ -58,7 +58,7 @@ threshold = _get_env_float('GRAPHFF_THRESHOLD', 1.0)
 # ----------- fold parameters -----------
 
 # ----------- run identity -----------
-# output goes to <experiment_root>/exp_<run_id>/<dataset>/fold_<fold>.
+# output goes to <experiment_root>/exp_<run_id>/<camera>/fold_<fold>.
 # overwrite=True replaces an existing fold directory; False refuses to run.
 run_id = os.environ.get('RUN_ID', graphff_paths.DEFAULT_RUN_ID)
 overwrite = _get_env_bool('GRAPHFF_OVERWRITE', True)

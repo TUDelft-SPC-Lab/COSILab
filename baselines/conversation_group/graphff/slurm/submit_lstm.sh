@@ -27,7 +27,8 @@
 #   OVERWRITE=1                 0 refuses to run when a fold directory exists
 #   DRY_RUN=0                   1 prints the sbatch lines without submitting
 #   MAIL_USER=zli33@tudelft.nl  empty disables mail entirely
-#   MAIL_TYPE=END,FAIL          one mail per array; add ARRAY_TASKS for one per fold
+#   MAIL_TYPE=END,FAIL,ARRAY_TASKS  one mail per fold; drop ARRAY_TASKS for one
+#                               summary mail per array instead
 #   GRAPHFF_DATA_ROOT=...       benchmark artifacts to read
 #   GRAPHFF_EXPERIMENT_ROOT=... where runs are written
 #   SLURM_LOG_DIR=...           Slurm stdout/stderr
@@ -48,14 +49,15 @@ fi
 
 SCRIPT="$PROJECT_ROOT/slurm/run_lstm.sbatch"
 GRAPHFF_DATA_ROOT="${GRAPHFF_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/LSTM}"
-GRAPHFF_EXPERIMENT_ROOT="${GRAPHFF_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/LSTM/experiments}"
+GRAPHFF_EXPERIMENT_ROOT="${GRAPHFF_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/LSTM}"
 SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/lstm}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
-# END,FAIL without ARRAY_TASKS is one mail per submitted array, not one per fold
+# ARRAY_TASKS makes Slurm mail per array task; without it one summary mail per
+# array is sent instead, which reports the array as a whole ("Mixed")
 # `-` not `:-`: MAIL_USER= (explicitly empty) means "no mail", not "use the default"
 MAIL_USER="${MAIL_USER-zli33@tudelft.nl}"
-MAIL_TYPE="${MAIL_TYPE:-END,FAIL}"
+MAIL_TYPE="${MAIL_TYPE:-END,FAIL,ARRAY_TASKS}"
 # empty by default: the old gpu[36-45] default was inherited from a previous
 # cluster layout and names nodes that do not exist in insy/general
 EXCLUDE_NODES="${EXCLUDE_NODES:-}"

@@ -101,11 +101,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_file(path: Path) -> pd.DataFrame:
-    # the optional subdirectory and filename suffix leave room for cross-camera
-    # evaluation files written next to the fold's own metrics_summary.csv
+    # experiments are keyed by camera alone; the session directory is optional so
+    # runs written before that change still parse. The trailing optional
+    # subdirectory and filename suffix leave room for cross-camera evaluation
+    # files written next to the fold's own metrics_summary.csv.
     path_text = path.as_posix()
     match = re.search(
-        r"/exp_([^/]+)/(mingling[12])/(cam\d+)/(?:no_pointnet/)?fold_(\d+)/"
+        r"/exp_([^/]+)/(?:(mingling[12])/)?(cam\d+)/(?:no_pointnet/)?fold_(\d+)/"
         r"(?:[^/]+/)?[^/]*metrics_summary[^/]*\.csv$",
         path_text,
     )
@@ -113,6 +115,7 @@ def parse_file(path: Path) -> pd.DataFrame:
         raise ValueError(f"Unexpected metrics path: {path}")
 
     run_id, session, camera, fold = match.groups()
+    session = session or camera_matrix.session_of(camera, path)
     df = pd.read_csv(path)
     # session/camera are the *training* camera; test_camera is where it was scored
     df.insert(0, "pipeline", "DANTE")
@@ -180,9 +183,10 @@ def main() -> None:
     args = parse_args()
     experiment_glob = "exp_*" if args.all_runs else "exp_" + str(args.run_id)
     search_root = args.models_root / experiment_glob
-    # the trailing ** also picks up per-evaluation-camera subdirectories
+    # the leading ** tolerates the old exp_*/<session>/cam* layout, the trailing
+    # one picks up per-evaluation-camera subdirectories
     files = sorted(args.models_root.glob(
-        experiment_glob + "/mingling*/cam*/**/fold_*/**/metrics_summary*.csv"))
+        experiment_glob + "/**/cam*/**/fold_*/**/metrics_summary*.csv"))
     if not files:
         raise SystemExit(
             f"No metrics_summary CSV files found under {search_root}\n"

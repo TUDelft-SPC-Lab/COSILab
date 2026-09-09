@@ -7,10 +7,11 @@ Everything the training stage reads or writes is derived from two roots:
     and ``<session>/<camera>/fold_<k>``.
 
 ``DANTE_EXPERIMENT_ROOT``
-    Where runs are written, laid out as
-    ``exp_<run_id>/<session>/<camera>/fold_<k>``. The run id is the top level, so
-    one experiment holds every camera and fold, and re-running with the same id
-    rewrites it in place.
+    Where runs are written, laid out as ``exp_<run_id>/<camera>/fold_<k>``. The
+    run id is the top level, so one experiment holds every camera and fold, and
+    re-running with the same id rewrites it in place. Outputs are keyed by camera
+    alone: camera numbers are unique across sessions, and results are compared
+    camera against camera rather than session against session.
 
 Both default to the shared cluster locations and can be overridden with the
 corresponding environment variables, which is all that is needed to run the same
@@ -30,7 +31,7 @@ DEFAULT_DATA_ROOT = (
 )
 DEFAULT_EXPERIMENT_ROOT = (
     "/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp"
-    "/B2_pipeline/DANTE/experiments"
+    "/B2_pipeline/DANTE"
 )
 
 DEFAULT_RUN_ID = "1"
@@ -55,6 +56,16 @@ def dataset_dir(dataset):
     return get_data_root() / dataset
 
 
+def camera_of(dataset):
+    """'mingling1/cam06' -> 'cam06'.
+
+    The data root keeps the session directory because that is how the benchmark
+    artifacts ship; the experiment root does not, so a camera's results sit at
+    one predictable place regardless of which session recorded it.
+    """
+    return str(dataset).rstrip("/").rsplit("/", 1)[-1]
+
+
 def ds_utils_dir(dataset):
     """Holds features.txt and group_names.txt, needed by the F1 callback."""
     return dataset_dir(dataset) / "DS_utils"
@@ -73,8 +84,8 @@ def experiment_dir(run_id):
 
 
 def dataset_output_dir(dataset, run_id, no_pointnet=False):
-    """e.g. <experiment_root>/exp_1/mingling1/cam06"""
-    base = experiment_dir(run_id) / dataset
+    """e.g. <experiment_root>/exp_1/cam06"""
+    base = experiment_dir(run_id) / camera_of(dataset)
     if no_pointnet:
         base = base / "no_pointnet"
     return base

@@ -11,7 +11,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --output=/home/nfs/zli33/slurm_outputs/lstm/slurm-%x-%A_%a.out
 #SBATCH --error=/home/nfs/zli33/slurm_outputs/lstm/slurm-%x-%A_%a.err
-#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-type=END,FAIL,ARRAY_TASKS
 #SBATCH --signal=B:USR1@120
 #
 # One LSTM/GraphFF camera, one array task per fold. Normally submitted through
@@ -31,15 +31,15 @@
 # The fold comes from the array index. Do NOT pass FOLD to select a single fold,
 # it would apply to every task; narrow the array instead (--array=2-2).
 #
-# Mail goes out once per array (END,FAIL), not once per task; submit_lstm.sh
-# overrides --mail-user/--mail-type from MAIL_USER/MAIL_TYPE.
+# ARRAY_TASKS means one mail per fold rather than one summary mail per array;
+# submit_lstm.sh overrides --mail-user/--mail-type from MAIL_USER/MAIL_TYPE.
 #
 # Every fold ends with a [FOLD STATUS] line in its fold log and a matching
 # <logs>/fold_<n>.status file, so COMPLETED / TIMEOUT / FAILED / CANCELLED is
 # readable without guessing from where the log stops.
 #
 # Environment overrides:
-#   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/$DATASET/fold_$FOLD
+#   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/<camera>/fold_$FOLD
 #   OVERWRITE=1          # 0 refuses to run when that fold directory already exists
 #   GRAPHFF_DATA_ROOT=/path/to/LSTM
 #   GRAPHFF_EXPERIMENT_ROOT=/path/to/experiments
@@ -71,7 +71,7 @@ DATASET="${DATASET:-mingling1/cam06}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 GRAPHFF_DATA_ROOT="${GRAPHFF_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/LSTM}"
-GRAPHFF_EXPERIMENT_ROOT="${GRAPHFF_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/LSTM/experiments}"
+GRAPHFF_EXPERIMENT_ROOT="${GRAPHFF_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/LSTM}"
 TRAIN="${TRAIN:-1}"
 DATASET_MAKE="${DATASET_MAKE:-1}"
 SEQ_LEN="${SEQ_LEN:-10}"
@@ -196,7 +196,10 @@ export NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 PY_SCRIPT="$PROJECT_ROOT/main_parallel.py"
 DATASET_DIR="$GRAPHFF_DATA_ROOT/$DATASET"
-DATASET_OUT_DIR="$GRAPHFF_EXPERIMENT_ROOT/exp_$RUN_ID/$DATASET"
+# outputs are keyed by camera alone, so this drops the session directory that the
+# data root carries; must match graphff_paths.dataset_output_dir
+CAMERA="${DATASET##*/}"
+DATASET_OUT_DIR="$GRAPHFF_EXPERIMENT_ROOT/exp_$RUN_ID/$CAMERA"
 DATASET_LOG_DIR="$DATASET_OUT_DIR/logs"
 FOLD_LOG="$DATASET_LOG_DIR/fold_${FOLD}.log"
 

@@ -71,6 +71,17 @@ _PATH_NAME_PATTERNS = (
 _CAMERA_PATTERN = re.compile(r"^cam(\d{1,2})$")
 
 
+def session_of(camera, path=None):
+    """Session a camera belongs to. Experiment paths no longer carry it."""
+    session = CAMERA_SESSION.get(camera)
+    if session is None:
+        raise ValueError(
+            "Unknown camera %r%s (expected one of %s)"
+            % (camera, "" if path is None else " in %s" % path, ", ".join(CAMERA_ORDER))
+        )
+    return session
+
+
 def normalise_camera(value):
     """'mingling1/cam8' | 'mingling1_cam08' | 'cam8' -> 'cam08'; None if unparsable."""
     if value is None or (isinstance(value, float) and pd.isna(value)):

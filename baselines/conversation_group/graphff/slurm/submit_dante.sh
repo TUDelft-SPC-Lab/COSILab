@@ -26,7 +26,8 @@
 #   USE_GPU=0                 1 requests a GPU and runs TensorFlow on it
 #   DRY_RUN=0                 1 prints the sbatch lines without submitting
 #   MAIL_USER=z.li-25@tudelft.nl  empty disables mail entirely
-#   MAIL_TYPE=END,FAIL        one mail per array; add ARRAY_TASKS for one per fold
+#   MAIL_TYPE=END,FAIL,ARRAY_TASKS  one mail per fold; drop ARRAY_TASKS for one
+#                             summary mail per array instead
 #   ARCH_SEED=                seed for DANTE's random architecture search; empty
 #                             derives it from dataset/run_id/fold (reproducible),
 #                             -1 draws from OS entropy
@@ -47,15 +48,16 @@ fi
 
 SCRIPT="$PROJECT_ROOT/slurm/run_dante.sbatch"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
-DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments}"
+DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE}"
 SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/dante}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 USE_GPU="${USE_GPU:-0}"
-# END,FAIL without ARRAY_TASKS is one mail per submitted array, not one per fold
+# ARRAY_TASKS makes Slurm mail per array task; without it one summary mail per
+# array is sent instead, which reports the array as a whole ("Mixed")
 # `-` not `:-`: MAIL_USER= (explicitly empty) means "no mail", not "use the default"
 MAIL_USER="${MAIL_USER-z.li-25@tudelft.nl}"
-MAIL_TYPE="${MAIL_TYPE:-END,FAIL}"
+MAIL_TYPE="${MAIL_TYPE:-END,FAIL,ARRAY_TASKS}"
 ARCH_SEED="${ARCH_SEED:-}"
 
 ALL_CAMS=(06 08 10 01 03)

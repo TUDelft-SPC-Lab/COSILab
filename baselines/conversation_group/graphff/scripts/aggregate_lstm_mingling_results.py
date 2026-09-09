@@ -103,14 +103,17 @@ def parse_args() -> argparse.Namespace:
 def parse_file(path: Path) -> pd.DataFrame:
     # run id, session, camera and fold come from the directory layout; the frame
     # stride is only recorded in the filename
-    # the optional subdirectory leaves room for cross-camera evaluation files
+    # experiments are keyed by camera alone; the session directory is optional so
+    # runs written before that change still parse. The trailing optional
+    # subdirectory leaves room for cross-camera evaluation files.
     path_match = re.search(
-        r"/exp_([^/]+)/(mingling[12])/(cam\d+)/fold_(\d+)/(?:[^/]+/)?[^/]+\.csv$",
+        r"/exp_([^/]+)/(?:(mingling[12])/)?(cam\d+)/fold_(\d+)/(?:[^/]+/)?[^/]+\.csv$",
         path.as_posix(),
     )
     if not path_match:
         raise ValueError(f"Unexpected metrics path: {path}")
     run_id, session, camera, fold = path_match.groups()
+    session = session or camera_matrix.session_of(camera, path)
 
     # the stride token is not always last once an eval marker is appended
     name_match = re.search(r"_stride=(\d+)", path.name)
@@ -185,9 +188,10 @@ def main() -> None:
     args = parse_args()
     experiment_glob = "exp_*" if args.all_runs else "exp_" + str(args.run_id)
     search_root = args.models_root / experiment_glob
-    # the trailing ** also picks up per-evaluation-camera subdirectories
+    # the leading ** tolerates the old exp_*/<session>/cam* layout, the trailing
+    # one picks up per-evaluation-camera subdirectories
     files = sorted(args.models_root.glob(
-        experiment_glob + "/mingling*/cam*/fold_*/**/*metrics_summary*.csv"))
+        experiment_glob + "/**/cam*/fold_*/**/*metrics_summary*.csv"))
     if not files:
         raise SystemExit(
             f"No metrics_summary CSV files found under {search_root}\n"

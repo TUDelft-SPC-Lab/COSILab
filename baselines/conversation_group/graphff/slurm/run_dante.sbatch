@@ -10,7 +10,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --output=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.out
 #SBATCH --error=/home/nfs/zli33/slurm_outputs/dante/slurm-%x-%A_%a.err
-#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-type=END,FAIL,ARRAY_TASKS
 #SBATCH --signal=B:USR1@120
 #
 # One DANTE camera, one array task per fold. Normally submitted through
@@ -28,15 +28,15 @@
 # The fold comes from the array index. Do NOT pass FOLD to select a single fold,
 # it would apply to every task; narrow the array instead (--array=2-2).
 #
-# Mail goes out once per array (END,FAIL), not once per task; submit_dante.sh
-# overrides --mail-user/--mail-type from MAIL_USER/MAIL_TYPE.
+# ARRAY_TASKS means one mail per fold rather than one summary mail per array;
+# submit_dante.sh overrides --mail-user/--mail-type from MAIL_USER/MAIL_TYPE.
 #
 # Every fold ends with a [FOLD STATUS] line in its fold log and a matching
 # <logs>/fold_<n>.status file, so COMPLETED / TIMEOUT / FAILED / CANCELLED is
 # readable without guessing from where the log stops.
 #
 # Environment overrides:
-#   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/$DATASET/fold_$FOLD
+#   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/<camera>/fold_$FOLD
 #   OVERWRITE=1          # 0 refuses to run when that fold directory already exists
 #   ARCH_SEED=           # seed for the random architecture search; empty means
 #                        # derive it from dataset/run_id/fold (reproducible),
@@ -69,7 +69,7 @@ DATASET="${DATASET:-mingling1/cam06}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
-DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments}"
+DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE}"
 EPOCHS="${EPOCHS:-600}"
 BATCH_SIZE="${BATCH_SIZE:-1024}"
 PATIENCE="${PATIENCE:-50}"
@@ -193,7 +193,10 @@ DANTE_ROOT="$PROJECT_ROOT/DANTE-master"
 DATASET_DIR="$DANTE_DATA_ROOT/$DATASET"
 FOLD_DIR="$DATASET_DIR/fold_$FOLD"
 RUN_SCRIPT="$DANTE_ROOT/deep_fformation/run_models.py"
-DATASET_OUT_DIR="$DANTE_EXPERIMENT_ROOT/exp_$RUN_ID/$DATASET"
+# outputs are keyed by camera alone, so this drops the session directory that the
+# data root carries; must match dante_paths.dataset_output_dir
+CAMERA="${DATASET##*/}"
+DATASET_OUT_DIR="$DANTE_EXPERIMENT_ROOT/exp_$RUN_ID/$CAMERA"
 DATASET_LOG_DIR="$DATASET_OUT_DIR/logs"
 FOLD_LOG="$DATASET_LOG_DIR/fold_${FOLD}.log"
 

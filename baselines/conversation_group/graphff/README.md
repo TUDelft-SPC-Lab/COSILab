@@ -134,7 +134,7 @@ Same shape as DANTE: two roots, both environment variables with cluster defaults
 | Variable | Default |
 | --- | --- |
 | `GRAPHFF_DATA_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/LSTM` |
-| `GRAPHFF_EXPERIMENT_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/LSTM/experiments` |
+| `GRAPHFF_EXPERIMENT_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/LSTM` |
 
 ```text
 $GRAPHFF_DATA_ROOT/mingling1/cam06/
@@ -142,13 +142,19 @@ $GRAPHFF_DATA_ROOT/mingling1/cam06/
 
 $GRAPHFF_EXPERIMENT_ROOT/
   exp_1/                       # RUN_ID, default 1
-    mingling1/cam06/
-      fold_0/                  # metrics, AUC, f1 tables, loss curve, model, scene pickle
+    cam06/
+      fold_0/                  # metrics, AUC, f1 tables, loss curve, scene pickle
       fold_1/ ... fold_4/
       logs/fold_0.log ...
-  _cache/                      # split tensors for GRAPHFF_DATASET_MAKE=0
-    mingling1/cam06/
+    cam08/ ... cam10/ cam01/ cam03/
+  _cache/                      # split tensors for GRAPHFF_DATASET_MAKE=0, and the model
+    cam06/
 ```
+
+Outputs are keyed by camera alone — no session directory. Camera numbers are
+unique across sessions, and results are compared camera against camera, so the
+session is metadata rather than a path level; the data root still carries it
+because that is how the deposit ships.
 
 Re-running with the same `RUN_ID` replaces a fold in place (the default); set
 `GRAPHFF_OVERWRITE=0` / `OVERWRITE=0` to refuse instead. The check happens before
@@ -157,6 +163,12 @@ any data is read, so a refusal costs nothing.
 The `_cache` tree sits outside `exp_*` deliberately: the cached splits depend only
 on the dataset, frame stride and sequence length, so they are shared across runs
 and survive an overwrite, which keeps `GRAPHFF_DATASET_MAKE=0` useful.
+
+The trained LSTM model is written there too, and its filename carries the camera,
+stride and sequence length but **not** `RUN_ID`. Training the same camera again
+under a different run id therefore replaces the checkpoint that a later
+cross-camera evaluation would load. Evaluate before re-training a camera, or move
+the checkpoint aside first.
 
 ### Running one fold locally
 
@@ -312,7 +324,7 @@ copy of the data is a one-variable change.
 | Variable | Default |
 | --- | --- |
 | `DANTE_DATA_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE` |
-| `DANTE_EXPERIMENT_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE/experiments` |
+| `DANTE_EXPERIMENT_ROOT` | `/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE` |
 
 Training needs only `DS_utils/` and the fold pickles, so the artifact-generation
 steps below can be skipped entirely when using the data deposit:
@@ -329,21 +341,22 @@ output path is fully determined by `(run_id, dataset, fold)`:
 ```text
 $DANTE_EXPERIMENT_ROOT/
   exp_1/                       # RUN_ID, default 1
-    mingling1/
-      cam06/
-        fold_0/
-          architecture.txt
-          results.txt
-          metrics_summary.csv
-          best_val_model.h5
-          tb/                  # TensorBoard events
-        fold_1/ ... fold_4/
-        logs/
-          fold_0.log ... fold_4.log
-      cam08/ ... cam10/
-    mingling2/
-      cam01/ ... cam03/
+    cam06/
+      fold_0/
+        architecture.txt
+        results.txt
+        metrics_summary.csv
+        best_val_model.h5
+        tb/                    # TensorBoard events
+      fold_1/ ... fold_4/
+      logs/
+        fold_0.log ... fold_4.log
+        fold_0.status ...      # COMPLETED / TIMEOUT / FAILED / CANCELLED
+    cam08/ ... cam10/ cam01/ cam03/
 ```
+
+Outputs are keyed by camera alone — no session directory, since camera numbers are
+unique across sessions and results are compared camera against camera.
 
 `RUN_ID` is shared by all five tasks of a 5-fold array, so the folds land side by
 side rather than each claiming its own directory. Re-running with the same
