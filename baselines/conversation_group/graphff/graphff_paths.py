@@ -17,9 +17,12 @@ two roots:
 Split tensors cached for ``GRAPHFF_DATASET_MAKE=0`` live outside the experiment
 tree, under ``<experiment_root>/_cache/<camera>``: they depend only on the
 dataset, frame stride and sequence length, so they are shared across runs and
-survive an overwrite. The trained model is cached there too, which means it is
-NOT keyed by run id: training the same camera again under a different RUN_ID
-replaces the checkpoint a later evaluation would load.
+survive an overwrite.
+
+The trained model does not: it belongs to one ``(run_id, camera, fold)`` and is
+written into that fold's output directory, so a re-run under a different RUN_ID
+leaves earlier checkpoints intact for a later cross-camera evaluation. Models
+written before that move are still read from ``_cache`` as a fallback.
 
 Kept dependency-free and Python 3.7 compatible: the container environment is
 Python 3.7.1.
@@ -95,5 +98,8 @@ def logs_dir(dataset, run_id):
 # ------------------------------- cache --------------------------------
 
 def cache_dir(dataset):
-    """Cached split tensors and model, shared across runs, not wiped by --overwrite."""
+    """Cached split tensors, shared across runs and not wiped by --overwrite.
+
+    The trained model is NOT here: it goes to fold_output_dir, keyed by run id.
+    """
     return get_experiment_root() / "_cache" / camera_of(dataset)

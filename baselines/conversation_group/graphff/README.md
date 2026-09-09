@@ -164,11 +164,23 @@ The `_cache` tree sits outside `exp_*` deliberately: the cached splits depend on
 on the dataset, frame stride and sequence length, so they are shared across runs
 and survive an overwrite, which keeps `GRAPHFF_DATASET_MAKE=0` useful.
 
-The trained LSTM model is written there too, and its filename carries the camera,
-stride and sequence length but **not** `RUN_ID`. Training the same camera again
-under a different run id therefore replaces the checkpoint that a later
-cross-camera evaluation would load. Evaluate before re-training a camera, or move
-the checkpoint aside first.
+The trained model does **not** live there. There is one checkpoint per
+`(run_id, camera, fold)`, written into that fold's own directory:
+
+```text
+exp_1/cam06/fold_0/dataset=mingling1_cam06_seq=10_stride=20_model_fold0.pt
+                   dataset=mingling1_cam06_seq=10_stride=20_training_info_fold0.pt
+```
+
+so re-training a camera under a different `RUN_ID` leaves earlier checkpoints
+intact for a later cross-camera evaluation. Checkpoints written before this move
+still sit under `_cache/<camera>/` and are read from there as a fallback when the
+fold directory has none.
+
+`GRAPHFF_TRAIN=0` reloads that checkpoint and only re-evaluates, so it no longer
+wipes the fold directory even with `OVERWRITE=1` — it would otherwise delete the
+model it is about to load. It fails with a clear message if no checkpoint is
+found in either place.
 
 ### Running one fold locally
 

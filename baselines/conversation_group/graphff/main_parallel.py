@@ -55,14 +55,28 @@ output_dir = str(graphff_paths.fold_output_dir(dataset_path, run_id, fold))
 # cached splits live outside the experiment tree: they depend only on the
 # dataset, stride and seq_len, so they are reused across runs and survive
 # an overwrite
-model_dir = str(graphff_paths.cache_dir(dataset_path))
+split_cache_dir = str(graphff_paths.cache_dir(dataset_path))
+
+# The trained model belongs to one (run_id, camera, fold) and so lives with the
+# rest of that fold's output, not in the shared split cache: the cache is keyed
+# by dataset/stride/seq_len alone, so a re-run under a different RUN_ID used to
+# overwrite the checkpoint a later cross-camera evaluation would load.
+# Filenames are unchanged, only the directory, and the old location is still read
+# when reloading so checkpoints written before this move keep working.
+model_name = dataset_artifact_prefix + '_model_fold' + str(fold) + '.pt'
+training_info_name = dataset_artifact_prefix + '_training_info_fold' + str(fold) + '.pt'
+model_file = output_dir + '/' + model_name
+training_info_file = output_dir + '/' + training_info_name
+legacy_model_file = split_cache_dir + '/' + model_name
+legacy_training_info_file = split_cache_dir + '/' + training_info_name
 
 print('data root       :', graphff_paths.get_data_root())
 print('experiment root :', graphff_paths.get_experiment_root())
 print('run_id          :', run_id)
 print('overwrite       :', overwrite)
 print('fold output dir :', output_dir)
-print('cache dir       :', model_dir)
+print('split cache dir :', split_cache_dir)
+print('model file      :', model_file)
 
 # checked up front so a refusal costs nothing rather than surfacing after training
 if os.path.isdir(output_dir):
@@ -72,16 +86,21 @@ if os.path.isdir(output_dir):
 			"Set GRAPHFF_OVERWRITE=1 to replace it, or pass a different RUN_ID "
 			"to write a separate run."
 		)
-	print('replacing existing fold output at ' + output_dir)
-	shutil.rmtree(output_dir)
-os.makedirs(output_dir)
+	if train_flag:
+		print('replacing existing fold output at ' + output_dir)
+		shutil.rmtree(output_dir)
+	else:
+		# GRAPHFF_TRAIN=0 reloads the model that lives in this directory, so
+		# wiping it here would delete the very checkpoint about to be loaded
+		print('reusing existing fold output at ' + output_dir + ' (GRAPHFF_TRAIN=0)')
+os.makedirs(output_dir, exist_ok=True)
 
 scenes_per_fold, num_folds = get_train_val_test_scenes(dataset_path)
 
 
 print("\n----------- DATA PREPROCESS -----------\n")
 
-os.makedirs(model_dir, exist_ok=True)
+os.makedirs(split_cache_dir, exist_ok=True)
 
 if (dataset_make_flag == True):
 	# load data
@@ -105,14 +124,14 @@ if (dataset_make_flag == True):
 	train_loader = DataLoader(dataset=train_tensor_dataset, batch_size=batch_size, shuffle=True)
 
 	# save data
-	torch.save(train_list, model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_list'+'.pt')
-	torch.save(val_list, model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_list'+'.pt')
-	torch.save(test_list, model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_list'+'.pt')
-	torch.save(train_set, model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_set'+'.pt')
-	torch.save(val_set, model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_set'+'.pt')
-	torch.save(test_set, model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_set'+'.pt')
+	torch.save(train_list, split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_list'+'.pt')
+	torch.save(val_list, split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_list'+'.pt')
+	torch.save(test_list, split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_list'+'.pt')
+	torch.save(train_set, split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_set'+'.pt')
+	torch.save(val_set, split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_set'+'.pt')
+	torch.save(test_set, split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_set'+'.pt')
 
-	torch.save(trackers, model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_trackers'+'.pt')
+	torch.save(trackers, split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_trackers'+'.pt')
 
 elif (dataset_make_flag == False):
 	scenes_per_fold, num_folds = get_train_val_test_scenes(dataset_path)
@@ -121,14 +140,14 @@ elif (dataset_make_flag == False):
 
 	fold = folds[fold_index]
 
-	train_list = torch.load(model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_list'+'.pt')
-	val_list = torch.load(model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_list'+'.pt')
-	test_list = torch.load(model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_list'+'.pt')
-	train_set = torch.load(model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_set'+'.pt')
-	val_set = torch.load(model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_set'+'.pt')
-	test_set = torch.load(model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_set'+'.pt')
+	train_list = torch.load(split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_list'+'.pt')
+	val_list = torch.load(split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_list'+'.pt')
+	test_list = torch.load(split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_list'+'.pt')
+	train_set = torch.load(split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_train_set'+'.pt')
+	val_set = torch.load(split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_val_set'+'.pt')
+	test_set = torch.load(split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_test_set'+'.pt')
 
-	trackers = torch.load(model_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_trackers'+'.pt')
+	trackers = torch.load(split_cache_dir+'/'+dataset_artifact_prefix+'_fold'+str(fold)+'_trackers'+'.pt')
 
 	# batch-based loader for training
 	train_tensor_dataset = TensorDataset(train_set.data, train_set.labels)
@@ -283,18 +302,34 @@ if(train_flag == True):
 												min_delta=early_stop_min_delta,
 												epoch_end_callback=validation_f1_callback)
 	add_best_validation_f1(training_info)
-	# save best validation-loss model
-	torch.save(skynet.cpu(), model_dir+'/'+dataset_artifact_prefix+'_model_fold'+str(fold)+'.pt')
-	torch.save(training_info, model_dir+'/'+dataset_artifact_prefix+'_training_info_fold'+str(fold)+'.pt')
+	# save best validation-loss model alongside this fold's other output
+	torch.save(skynet.cpu(), model_file)
+	torch.save(training_info, training_info_file)
+	print('saved model to ' + model_file)
 	skynet = skynet.to(device)
 else:
-	skynet = torch.load(model_dir+'/'+dataset_artifact_prefix+'_model_fold'+str(fold)+'.pt', map_location=device)
+	# prefer this run's own checkpoint; fall back to the pre-move shared cache
+	load_model_file = model_file
+	load_training_info_file = training_info_file
+	if not os.path.exists(load_model_file) and os.path.exists(legacy_model_file):
+		print('no model in ' + output_dir + ', loading the legacy cached one at '
+			+ legacy_model_file)
+		load_model_file = legacy_model_file
+		load_training_info_file = legacy_training_info_file
+	if not os.path.exists(load_model_file):
+		raise SystemExit(
+			"[ERROR] no model to evaluate: " + load_model_file + "\n"
+			"Train this fold first (GRAPHFF_TRAIN=1), or point RUN_ID at the run "
+			"that trained it."
+		)
+	print('loading model from ' + load_model_file)
+	skynet = torch.load(load_model_file, map_location=device)
 	skynet = skynet.to(device)
 	skynet.eval()
 	train_loss = None
 	val_loss = None
-	training_info_path = model_dir+'/'+dataset_artifact_prefix+'_training_info_fold'+str(fold)+'.pt'
-	training_info = torch.load(training_info_path) if os.path.exists(training_info_path) else None
+	training_info = (torch.load(load_training_info_file)
+		if os.path.exists(load_training_info_file) else None)
 	if training_info is not None and 'f1_eval_every' not in training_info:
 		add_best_validation_f1(training_info)
 
