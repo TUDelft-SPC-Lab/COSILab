@@ -98,6 +98,7 @@ echo "matrix_decimals=$MATRIX_DECIMALS"
 
 apptainer exec --cleanenv \
   --env PROJECT_ROOT="$PROJECT_ROOT" \
+  --env APPTAINER_IMAGE="$APPTAINER_IMAGE" \
   --env MODEL="$MODEL" \
   --env RUN_ID="$RUN_ID" \
   --env MATRIX_METRICS="$MATRIX_METRICS" \
@@ -115,16 +116,13 @@ apptainer exec --cleanenv \
     set -euo pipefail
     cd "$PROJECT_ROOT"
     # py371 for both pipelines: the report needs pandas, dante_tf1 has none
-    PYBIN="/opt/conda/envs/py371/bin/python"
+    PYBIN="${PYTHON_BIN:-/opt/conda/envs/py371/bin/python}"
     if [[ ! -x "$PYBIN" ]]; then
-      PYBIN="$(command -v python3 || command -v python)"
-    fi
-    if ! "$PYBIN" -c "import pandas" >/dev/null 2>&1; then
-      echo "[ERROR] no interpreter with pandas inside the container: $PYBIN"
+      echo "[ERROR] no python at $PYBIN inside $APPTAINER_IMAGE"
+      echo "        Set PYTHON_BIN if this image lays its environments out differently."
       exit 3
     fi
     echo "python_bin=${PYBIN}"
-    "${PYBIN}" -V
     "${PYBIN}" scripts/build_matrix_report.py \
       --model "$MODEL" \
       --exp-id "$RUN_ID" \

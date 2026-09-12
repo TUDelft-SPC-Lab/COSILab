@@ -206,6 +206,8 @@ echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
 apptainer_env_args=(
   --env PROJECT_ROOT="$PROJECT_ROOT"
   --env DANTE_ROOT="$DANTE_ROOT"
+  # --cleanenv hides the host environment, and the error path names the image
+  --env APPTAINER_IMAGE="$APPTAINER_IMAGE"
   --env RUN_ID="$RUN_ID"
   --env EVAL_CAM="$EVAL_CAM"
   --env TRAIN_CAMS="$TRAIN_CAMS"
@@ -254,44 +256,16 @@ apptainer exec --cleanenv \
       export CUDA_VISIBLE_DEVICES=""
       echo "DANTE GPU disabled; running TensorFlow on CPU."
     fi
-    find_python_with_dante_deps() {
-      local candidates=(
-        "/opt/conda/envs/dante_tf1/bin/python"
-        "/opt/conda/envs/py371/bin/python"
-        "/opt/venv/bin/python"
-        "/usr/local/bin/python"
-        "/usr/local/bin/python3"
-        "/opt/conda/bin/python"
-        "/miniconda/bin/python"
-        "/venv/bin/python"
-      )
-      if command -v python >/dev/null 2>&1; then
-        candidates+=("$(command -v python)")
-      fi
-      for py in "${candidates[@]}"; do
-        [[ -x "$py" ]] || continue
-        if "$py" -c "import tensorflow, keras" >/dev/null 2>&1; then
-          echo "$py"
-          return 0
-        fi
-      done
-      return 1
-    }
-    if [[ -n "${DANTE_PYTHON_BIN:-}" ]]; then
-      PYBIN="$DANTE_PYTHON_BIN"
-      if [[ ! -x "$PYBIN" ]]; then
-        echo "[ERROR] DANTE_PYTHON_BIN is not executable inside the container: $PYBIN"
-        exit 3
-      fi
-    else
-      PYBIN="$(find_python_with_dante_deps || true)"
-    fi
-    if [[ -z "${PYBIN}" ]]; then
-      echo "[ERROR] Could not find a Python interpreter with tensorflow and keras inside the container."
+    # the TensorFlow 1.x / Keras environment of the image; the image also exports
+    # DANTE_PYTHON_BIN, and --env passes an empty one through when the host has
+    # none, hence :- rather than -
+    PYBIN="${DANTE_PYTHON_BIN:-/opt/conda/envs/dante_tf1/bin/python}"
+    if [[ ! -x "$PYBIN" ]]; then
+      echo "[ERROR] no python at $PYBIN inside $APPTAINER_IMAGE"
+      echo "        Set DANTE_PYTHON_BIN if this image lays its environments out differently."
       exit 3
     fi
     echo "python_bin=${PYBIN}"
-    "${PYBIN}" -V
     args=(
       --exp-id "$RUN_ID"
       --eval-cam "$EVAL_CAM"

@@ -164,8 +164,7 @@ def mirror_cell(exp_id, train_camera, fold, test_camera, metrics, no_pointnet):
     directory = (dante_paths.fold_output_dir(train_camera, exp_id, fold,
                                              no_pointnet=no_pointnet)
                  / ("eval_" + test_camera))
-    if not os.path.isdir(str(directory)):
-        os.makedirs(str(directory))
+    os.makedirs(str(directory), exist_ok=True)
     path = str(directory / "metrics_summary.csv")
     matrix_cells.write_metrics_summary(path, metrics, test_camera)
     return path
@@ -188,8 +187,9 @@ def main():
     results_root = (args.results_root if args.results_root
                     else str(dante_paths.experiment_dir(args.exp_id) / "results"))
     cells_dir = os.path.join(results_root, "cells")
-    if not os.path.isdir(cells_dir):
-        os.makedirs(cells_dir)
+    # exist_ok: the array tasks start together and would otherwise race here,
+    # one creating the directory between another's isdir check and its mkdir
+    os.makedirs(cells_dir, exist_ok=True)
 
     print("pipeline        : " + PIPELINE)
     print("data root       : " + str(dante_paths.get_data_root()))
@@ -201,7 +201,6 @@ def main():
     print("folds           : " + ", ".join(str(fold) for fold in folds))
     print("no_pointnet     : " + str(args.no_pointnet))
     print("mirror cells    : " + str(args.mirror_cells))
-    print("tensorflow      : " + tf.__version__ + ", keras: " + keras.__version__)
     print("")
 
     missing_checkpoints = []

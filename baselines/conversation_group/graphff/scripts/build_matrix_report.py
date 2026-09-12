@@ -302,8 +302,7 @@ def main():
     results_root = (args.results_root if args.results_root
                     else str(paths_module.experiment_dir(args.exp_id) / "results"))
     cells_dir = args.cells_dir if args.cells_dir else os.path.join(results_root, "cells")
-    if not os.path.isdir(results_root):
-        os.makedirs(results_root)
+    os.makedirs(results_root, exist_ok=True)
 
     cells, cell_files = read_cells(cells_dir, spec["cells_glob"])
     metrics = [name.strip() for name in args.matrix_metrics.split(",") if name.strip()]

@@ -271,8 +271,7 @@ def mirror_cell(exp_id, train_camera, fold, test_camera, metrics):
     """Write the cell where the existing aggregators look for it."""
     directory = (graphff_paths.fold_output_dir(train_camera, exp_id, fold)
                  / ("eval_" + test_camera))
-    if not os.path.isdir(str(directory)):
-        os.makedirs(str(directory))
+    os.makedirs(str(directory), exist_ok=True)
     path = str(directory / "metrics_summary.csv")
     matrix_cells.write_metrics_summary(path, metrics, test_camera)
     return path
@@ -305,8 +304,9 @@ def main():
     results_root = (args.results_root if args.results_root
                     else str(graphff_paths.experiment_dir(args.exp_id) / "results"))
     cells_dir = os.path.join(results_root, "cells")
-    if not os.path.isdir(cells_dir):
-        os.makedirs(cells_dir)
+    # exist_ok: the array tasks start together and would otherwise race here,
+    # one creating the directory between another's isdir check and its mkdir
+    os.makedirs(cells_dir, exist_ok=True)
 
     print("pipeline        : " + PIPELINE)
     print("data root       : " + str(graphff_paths.get_data_root()))

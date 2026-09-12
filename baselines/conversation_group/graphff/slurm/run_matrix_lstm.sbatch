@@ -207,6 +207,8 @@ echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
 apptainer_env_args=(
   --env PROJECT_ROOT="$PROJECT_ROOT"
   --env PYTHONPATH="$PROJECT_ROOT"
+  # --cleanenv hides the host environment, and the error path names the image
+  --env APPTAINER_IMAGE="$APPTAINER_IMAGE"
   --env RUN_ID="$RUN_ID"
   --env EVAL_CAM="$EVAL_CAM"
   --env TRAIN_CAMS="$TRAIN_CAMS"
@@ -256,35 +258,15 @@ apptainer exec --cleanenv \
   bash -lc '
     set -euo pipefail
     cd "$PROJECT_ROOT"
-    find_python_with_torch() {
-      local candidates=(
-        "/opt/conda/envs/py371/bin/python"
-        "/opt/venv/bin/python"
-        "/usr/local/bin/python"
-        "/usr/local/bin/python3"
-        "/opt/conda/bin/python"
-        "/miniconda/bin/python"
-        "/venv/bin/python"
-      )
-      if command -v python >/dev/null 2>&1; then
-        candidates+=("$(command -v python)")
-      fi
-      for py in "${candidates[@]}"; do
-        [[ -x "$py" ]] || continue
-        if "$py" -c "import torch" >/dev/null 2>&1; then
-          echo "$py"
-          return 0
-        fi
-      done
-      return 1
-    }
-    PYBIN="$(find_python_with_torch || true)"
-    if [[ -z "${PYBIN}" ]]; then
-      echo "[ERROR] Could not find a Python interpreter with torch inside the container."
+    PYBIN="${PYTHON_BIN:-/opt/conda/envs/py371/bin/python}"
+    if [[ ! -x "$PYBIN" ]]; then
+      echo "[ERROR] no python at $PYBIN inside $APPTAINER_IMAGE"
+      echo "        Set PYTHON_BIN if this image lays its environments out differently."
       exit 3
     fi
     echo "python_bin=${PYBIN}"
-    "${PYBIN}" -V
+    # a capability check, not a version check: USE_GPU=1 must not quietly run on
+    # CPU after the job has claimed a GPU
     if [[ "$USE_GPU" == "1" ]]; then
       "${PYBIN}" - <<'"'"'PY'"'"'
 import torch
