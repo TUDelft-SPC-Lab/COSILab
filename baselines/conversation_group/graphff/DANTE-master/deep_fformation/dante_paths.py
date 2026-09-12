@@ -103,3 +103,30 @@ def tensorboard_dir(dataset, run_id, fold, no_pointnet=False):
 def logs_dir(dataset, run_id, no_pointnet=False):
     """Per-fold console logs, sitting alongside that camera's fold directories."""
     return dataset_output_dir(dataset, run_id, no_pointnet) / "logs"
+
+
+# ------------------------ cross-camera evaluation ------------------------
+
+def evaluations_dir(run_id):
+    """e.g. <experiment_root>/exp_1/evaluations.
+
+    Cross-camera evaluation reads every camera's models and writes one file per
+    (training camera, evaluation camera) pair, so its output belongs to the
+    experiment as a whole rather than to any one camera's fold directory.
+    """
+    return experiment_dir(run_id) / "evaluations"
+
+
+def evaluation_pair_file(train_dataset, test_dataset, run_id):
+    """e.g. <evaluations>/cam01@cam03.csv -- trained on cam01, scored on cam03.
+
+    One file per pair, one row per fold. Either argument may be a camera
+    ('cam01') or a dataset ('mingling2/cam01').
+    """
+    name = camera_of(train_dataset) + "@" + camera_of(test_dataset) + ".csv"
+    return evaluations_dir(run_id) / name
+
+
+def evaluation_results_dir(run_id):
+    """e.g. <evaluations>/results -- the matrix tables, report, cells and logs."""
+    return evaluations_dir(run_id) / "results"

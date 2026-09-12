@@ -18,19 +18,20 @@ the evaluation camera's own normalisation. That is the only sensible choice here
 (the training camera's min/max is not a property of the model), but it is part of
 what an off-diagonal number means.
 
-Outputs, all under <experiment_root>/exp_<id>/results:
+Outputs, all under <experiment_root>/exp_<id>/evaluations:
 
-    cells/lstm_cells_<eval camera>.csv   one row per cell, this invocation
-    ...                                  build_matrix_report.py merges them
+    cam01@cam03.csv              trained on cam01, scored on cam03: one row per
+                                 fold, so one file is one cell of the matrix
+    results/cells/lstm_cells_<eval camera>.csv
+                                 one row per cell of this invocation, statuses
+                                 included; build_matrix_report.py merges them
+    results/                     the matrix tables and the report
 
-and, for every off-diagonal cell, a copy at
-
-    exp_<id>/<train camera>/fold_<k>/eval_<eval camera>/metrics_summary.csv
-
-which is one of the layouts the two aggregators already recognise, so they pick
-the cross-camera results up as well. The diagonal is deliberately not mirrored
-back: the training run already wrote metrics_summary there, and a second copy
-would trip the aggregators' duplicate check.
+Nothing is written into the training output: a fold directory holds what the
+training run put there, and the evaluation of one camera's models against another
+belongs to the experiment as a whole. The diagonal (cam01@cam01.csv) is written
+too -- it is the same rule with column == row, and reproduces the training run's
+own test numbers.
 
 A missing checkpoint is a warning, not an error: the cell is recorded with
 status=missing_checkpoint and the run continues, so one absent fold costs a gap
@@ -144,9 +145,9 @@ def parse_args():
         help="rebuild the split tensors from features.csv instead of reading the "
              "cached ones under <experiment_root>/_cache.")
     parser.add_argument(
-        "--no-mirror-cells", dest="mirror_cells", action="store_false", default=True,
-        help="do not write eval_<camera>/metrics_summary.csv into the fold "
-             "directories; the cells CSV is then the only output.")
+        "--no-pair-files", dest="pair_files", action="store_false", default=True,
+        help="do not write the per-pair <train>@<test>.csv files; the cells CSV "
+             "is then the only per-cell output.")
     return parser.parse_args()
 
 
@@ -267,13 +268,10 @@ def score_one_cell(checkpoint, device, test_set, scene_group_idx_dict,
     return metrics, len(scene_seq_mat_dict)
 
 
-def mirror_cell(exp_id, train_camera, fold, test_camera, metrics):
-    """Write the cell where the existing aggregators look for it."""
-    directory = (graphff_paths.fold_output_dir(train_camera, exp_id, fold)
-                 / ("eval_" + test_camera))
-    os.makedirs(str(directory), exist_ok=True)
-    path = str(directory / "metrics_summary.csv")
-    matrix_cells.write_metrics_summary(path, metrics, test_camera)
+def write_pair_file(exp_id, train_camera, test_camera, rows):
+    """One cell's folds as <experiment>/evaluations/<train>@<test>.csv."""
+    path = str(graphff_paths.evaluation_pair_file(train_camera, test_camera, exp_id))
+    matrix_cells.write_pair_file(path, train_camera, test_camera, rows)
     return path
 
 
@@ -301,17 +299,20 @@ def main():
         device = torch.device(args.device)
 
     experiment_root = graphff_paths.get_experiment_root()
+    evaluations_dir = str(graphff_paths.evaluations_dir(args.exp_id))
     results_root = (args.results_root if args.results_root
-                    else str(graphff_paths.experiment_dir(args.exp_id) / "results"))
+                    else str(graphff_paths.evaluation_results_dir(args.exp_id)))
     cells_dir = os.path.join(results_root, "cells")
     # exist_ok: the array tasks start together and would otherwise race here,
     # one creating the directory between another's isdir check and its mkdir
     os.makedirs(cells_dir, exist_ok=True)
+    os.makedirs(evaluations_dir, exist_ok=True)
 
     print("pipeline        : " + PIPELINE)
     print("data root       : " + str(graphff_paths.get_data_root()))
     print("experiment root : " + str(experiment_root))
     print("experiment      : " + str(graphff_paths.experiment_dir(args.exp_id)))
+    print("evaluations     : " + evaluations_dir)
     print("results root    : " + results_root)
     print("eval cameras    : " + ", ".join(eval_cameras))
     print("train cameras   : " + ", ".join(train_cameras))
@@ -320,7 +321,7 @@ def main():
     print("frame_stride    : " + str(args.frame_stride))
     print("device          : " + str(device))
     print("rebuild data    : " + str(args.rebuild_data))
-    print("mirror cells    : " + str(args.mirror_cells))
+    print("pair files      : " + str(args.pair_files))
     print("")
 
     # one parse of GT.csv per camera instead of one per call
@@ -331,6 +332,7 @@ def main():
     missing_checkpoints = []
     failed_cells = []
     written = []
+    pair_files = []
 
     for eval_camera in eval_cameras:
         eval_dataset = camera_registry.dataset_of(eval_camera)
@@ -347,6 +349,9 @@ def main():
 
         cells_path = os.path.join(
             cells_dir, "lstm_cells_" + eval_camera + ".csv")
+        # one pair file per training camera, rewritten as each fold lands; this
+        # task owns them all, since no other task scores this evaluation camera
+        pair_rows = {}
         with matrix_cells.CellWriter(cells_path) as cells:
             for fold in folds:
                 # release the previous fold's tensors before building the next
@@ -415,18 +420,25 @@ def main():
                         metrics=metrics, n_eval_samples=test_set.size,
                         n_scenes=n_scenes, seconds=time.time() - started))
 
-                    if args.mirror_cells and train_camera != eval_camera:
-                        mirror_cell(args.exp_id, train_camera, fold,
-                                    eval_camera, metrics)
+                    pair_rows.setdefault(train_camera, []).append((fold, metrics))
+                    if args.pair_files:
+                        write_pair_file(args.exp_id, train_camera, eval_camera,
+                                        pair_rows[train_camera])
 
         print("wrote " + cells_path + " (" + str(cells.count) + " cells)")
         written.append(cells_path)
+        if args.pair_files:
+            for train_camera in sorted(pair_rows):
+                pair_files.append("%s@%s.csv" % (train_camera, eval_camera))
         # the built arrays for this camera are no longer needed
         built.pop(eval_dataset, None)
 
     print("\n----------- SUMMARY -----------\n")
     for path in written:
         print("cells: " + path)
+    if pair_files:
+        print("pairs: {} file(s) in {}: {}".format(
+            len(pair_files), evaluations_dir, ", ".join(pair_files)))
     if missing_checkpoints:
         seen = sorted(set((camera, fold) for camera, fold, _ in missing_checkpoints))
         print("[WARN] {} of the expected checkpoints are missing: {}".format(

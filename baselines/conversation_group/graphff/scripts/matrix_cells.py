@@ -113,15 +113,21 @@ class CellWriter(object):
         return False
 
 
-def write_metrics_summary(path, metrics, test_camera):
-    """One cell, in the per-fold layout the two aggregators already read.
+PAIR_FIELDS = ("train_camera", "test_camera", "fold", "split") + METRIC_FIELDS
 
-    Written as ``<fold_dir>/eval_<camera>/metrics_summary.csv``; the directory
-    name alone identifies the evaluation camera, and the explicit column makes
-    the file self-describing if it is ever moved.
+
+def write_pair_file(path, train_camera, test_camera, rows):
+    """One (training camera, evaluation camera) pair: ``cam01@cam03.csv``.
+
+    ``rows`` is [(fold, metrics), ...] in fold order, so the whole file is one
+    cell of the matrix and reading it needs no other file. Rewritten in full
+    after every fold rather than appended to, so a task that dies mid-camera
+    leaves a consistent file rather than a truncated row.
     """
     with open(str(path), "w") as handle:
         writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow(("split", "test_camera") + METRIC_FIELDS)
-        writer.writerow(
-            ("test", test_camera) + tuple(metrics[name] for name in METRIC_FIELDS))
+        writer.writerow(PAIR_FIELDS)
+        for fold, metrics in rows:
+            writer.writerow(
+                (train_camera, test_camera, fold, "test")
+                + tuple(metrics[name] for name in METRIC_FIELDS))

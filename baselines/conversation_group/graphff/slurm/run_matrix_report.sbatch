@@ -72,7 +72,8 @@ cd "$PROJECT_ROOT"
 mkdir -p "$CACHE_ROOT/xdg" "$CACHE_ROOT/mpl"
 
 PY_SCRIPT="$PROJECT_ROOT/scripts/build_matrix_report.py"
-RESULTS_ROOT="$EXPERIMENT_ROOT/exp_$RUN_ID/results"
+# must match {graphff,dante}_paths.evaluation_results_dir
+RESULTS_ROOT="$EXPERIMENT_ROOT/exp_$RUN_ID/evaluations/results"
 TASK_LOG_DIR="$RESULTS_ROOT/logs"
 TASK_LOG="$TASK_LOG_DIR/matrix_report.log"
 

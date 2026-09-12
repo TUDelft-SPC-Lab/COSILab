@@ -3,7 +3,7 @@
 
 Reads the per-camera cell CSVs written by scripts/evaluate_matrix_lstm.py or
 scripts/evaluate_matrix_dante.py and writes, into
-``<experiment_root>/exp_<id>/results``:
+``<experiment_root>/exp_<id>/evaluations/results``:
 
     <prefix>_matrix_cells.csv    every cell of the run, merged, with its status
     <prefix>_matrix_long.csv     tidy mean/std per (metric, train cam, test cam)
@@ -91,7 +91,8 @@ def parse_args():
         help="overrides the pipeline's experiment root for this run.")
     parser.add_argument(
         "--results-root", default=None,
-        help="where the results live (default <experiment_root>/exp_<id>/results).")
+        help="where the results live "
+             "(default <experiment_root>/exp_<id>/evaluations/results).")
     parser.add_argument(
         "--cells-dir", default=None,
         help="where the per-camera cell CSVs live (default <results-root>/cells).")
@@ -208,6 +209,7 @@ def build_report(model, args, paths_module, results_root, cells, cell_files,
     add("generated       : " + datetime.now().isoformat(timespec="seconds"))
     add("experiment root : " + str(paths_module.get_experiment_root()))
     add("experiment      : " + str(paths_module.experiment_dir(args.exp_id)))
+    add("evaluations     : " + str(paths_module.evaluations_dir(args.exp_id)))
     add("results root    : " + results_root)
     add("cell files      : " + str(len(cell_files)))
     for path in cell_files:
@@ -300,7 +302,7 @@ def main():
                    else "DANTE_EXPERIMENT_ROOT"] = args.experiment_root
 
     results_root = (args.results_root if args.results_root
-                    else str(paths_module.experiment_dir(args.exp_id) / "results"))
+                    else str(paths_module.evaluation_results_dir(args.exp_id)))
     cells_dir = args.cells_dir if args.cells_dir else os.path.join(results_root, "cells")
     os.makedirs(results_root, exist_ok=True)
 

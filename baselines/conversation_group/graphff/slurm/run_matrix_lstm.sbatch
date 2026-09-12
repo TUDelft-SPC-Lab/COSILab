@@ -40,7 +40,7 @@
 #   FOLDS=all                # which folds to score (all | 0,2)
 #   USE_GPU=0                # 1 runs inference on a GPU
 #   REBUILD_DATA=0           # 1 rebuilds split tensors instead of using _cache
-#   MIRROR_CELLS=1           # 0 skips the eval_<cam>/metrics_summary.csv copies
+#   PAIR_FILES=1             # 0 skips the evaluations/<train>@<test>.csv files
 #   GRAPHFF_DATA_ROOT=/path/to/LSTM
 #   GRAPHFF_EXPERIMENT_ROOT=/path/to/experiments
 #   SEQ_LEN=10  FRAME_STRIDE=20
@@ -68,7 +68,7 @@ TRAIN_CAMS="${TRAIN_CAMS:-all}"
 FOLDS="${FOLDS:-all}"
 USE_GPU="${USE_GPU:-0}"
 REBUILD_DATA="${REBUILD_DATA:-0}"
-MIRROR_CELLS="${MIRROR_CELLS:-1}"
+PAIR_FILES="${PAIR_FILES:-1}"
 SEQ_LEN="${SEQ_LEN:-10}"
 FRAME_STRIDE="${FRAME_STRIDE:-20}"
 GRAPHFF_DATA_ROOT="${GRAPHFF_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/LSTM}"
@@ -168,7 +168,8 @@ export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 PY_SCRIPT="$PROJECT_ROOT/scripts/evaluate_matrix_lstm.py"
-RESULTS_ROOT="$GRAPHFF_EXPERIMENT_ROOT/exp_$RUN_ID/results"
+# must match graphff_paths.evaluation_results_dir
+RESULTS_ROOT="$GRAPHFF_EXPERIMENT_ROOT/exp_$RUN_ID/evaluations/results"
 TASK_LOG_DIR="$RESULTS_ROOT/logs"
 TASK_LOG="$TASK_LOG_DIR/matrix_eval_cam${EVAL_CAM}.log"
 
@@ -199,7 +200,7 @@ echo "results_root=$RESULTS_ROOT"
 echo "task_log=$TASK_LOG"
 echo "use_gpu=$USE_GPU"
 echo "rebuild_data=$REBUILD_DATA"
-echo "mirror_cells=$MIRROR_CELLS"
+echo "pair_files=$PAIR_FILES"
 echo "seq_len=$SEQ_LEN"
 echo "frame_stride=$FRAME_STRIDE"
 echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
@@ -215,7 +216,7 @@ apptainer_env_args=(
   --env FOLDS="$FOLDS"
   --env USE_GPU="$USE_GPU"
   --env REBUILD_DATA="$REBUILD_DATA"
-  --env MIRROR_CELLS="$MIRROR_CELLS"
+  --env PAIR_FILES="$PAIR_FILES"
   --env SEQ_LEN="$SEQ_LEN"
   --env FRAME_STRIDE="$FRAME_STRIDE"
   --env GRAPHFF_DATA_ROOT="$GRAPHFF_DATA_ROOT"
@@ -288,8 +289,8 @@ PY
     if [[ "$REBUILD_DATA" == "1" ]]; then
       args+=(--rebuild-data)
     fi
-    if [[ "$MIRROR_CELLS" == "0" ]]; then
-      args+=(--no-mirror-cells)
+    if [[ "$PAIR_FILES" == "0" ]]; then
+      args+=(--no-pair-files)
     fi
     "${PYBIN}" scripts/evaluate_matrix_lstm.py "${args[@]}"
   ' 2>&1 | tee -a "$TASK_LOG"

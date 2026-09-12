@@ -22,13 +22,14 @@
 #   DRY_RUN=1 bash slurm/submit_matrix_lstm.sh
 #   REPORT_ONLY=1 bash slurm/submit_matrix_lstm.sh        # rebuild the matrix only
 #
-# Results go to $GRAPHFF_EXPERIMENT_ROOT/exp_$RUN_ID/results.
+# Per-pair metrics go to $GRAPHFF_EXPERIMENT_ROOT/exp_$RUN_ID/evaluations as
+# <train>@<test>.csv, and the matrix tables to that directory's results/.
 #
 # Environment overrides:
 #   RUN_ID=1                  which experiment to read and write results for
 #   USE_GPU=0                 1 requests a GPU and runs inference on it
 #   REBUILD_DATA=0            1 rebuilds split tensors instead of using _cache
-#   MIRROR_CELLS=1            0 skips the eval_<cam>/metrics_summary.csv copies
+#   PAIR_FILES=1              0 skips the evaluations/<train>@<test>.csv files
 #   NO_REPORT=0               1 submits only the evaluation array
 #   REPORT_ONLY=0             1 submits only the report (no evaluation)
 #   DRY_RUN=0                 1 prints the sbatch lines without submitting
@@ -59,7 +60,7 @@ SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/lstm}"
 RUN_ID="${RUN_ID:-1}"
 USE_GPU="${USE_GPU:-0}"
 REBUILD_DATA="${REBUILD_DATA:-0}"
-MIRROR_CELLS="${MIRROR_CELLS:-1}"
+PAIR_FILES="${PAIR_FILES:-1}"
 NO_REPORT="${NO_REPORT:-0}"
 REPORT_ONLY="${REPORT_ONLY:-0}"
 SEQ_LEN="${SEQ_LEN:-10}"
@@ -196,7 +197,8 @@ fi
 
 echo "data root:       $GRAPHFF_DATA_ROOT"
 echo "experiment:      $EXPERIMENT_DIR"
-echo "results:         $EXPERIMENT_DIR/results"
+echo "evaluations:     $EXPERIMENT_DIR/evaluations"
+echo "results:         $EXPERIMENT_DIR/evaluations/results"
 echo "slurm log dir:   $SLURM_LOG_DIR"
 echo "eval cameras:    $EVAL_CAM_ARG"
 echo "train cameras:   $TRAIN_CAM_ARG"
@@ -231,7 +233,7 @@ elif [[ "$USE_GPU" != "0" ]]; then
 fi
 
 export_arg="ALL,RUN_ID=$RUN_ID,TRAIN_CAMS=$TRAIN_CAM_ARG,FOLDS=$FOLD_ARG"
-export_arg="$export_arg,USE_GPU=$USE_GPU,REBUILD_DATA=$REBUILD_DATA,MIRROR_CELLS=$MIRROR_CELLS"
+export_arg="$export_arg,USE_GPU=$USE_GPU,REBUILD_DATA=$REBUILD_DATA,PAIR_FILES=$PAIR_FILES"
 export_arg="$export_arg,SEQ_LEN=$SEQ_LEN,FRAME_STRIDE=$FRAME_STRIDE"
 export_arg="$export_arg,GRAPHFF_DATA_ROOT=$GRAPHFF_DATA_ROOT,GRAPHFF_EXPERIMENT_ROOT=$GRAPHFF_EXPERIMENT_ROOT"
 if [[ -n "${EXTRA_EXPORTS:-}" ]]; then
@@ -301,9 +303,10 @@ else
   report_id="$(sbatch --parsable "${report_args[@]}")"
   echo "submitted report job $report_id"
   echo
-  echo "results will appear in $EXPERIMENT_DIR/results:"
-  echo "  lstm_mingling_matrix_report.txt   tables, missing checkpoints, warnings"
-  echo "  lstm_mingling_matrix_f1_1.csv     one rendered 5x5 table per metric"
-  echo "  lstm_mingling_matrix_long.csv     tidy mean/std per cell"
-  echo "  lstm_mingling_matrix_cells.csv    every cell, with its status"
+  echo "results will appear in $EXPERIMENT_DIR/evaluations:"
+  echo "  <train>@<test>.csv                       per-pair metrics, one row per fold"
+  echo "  results/lstm_mingling_matrix_report.txt  tables, missing checkpoints, warnings"
+  echo "  results/lstm_mingling_matrix_f1_1.csv    one rendered 5x5 table per metric"
+  echo "  results/lstm_mingling_matrix_long.csv    tidy mean/std per cell"
+  echo "  results/lstm_mingling_matrix_cells.csv   every cell, with its status"
 fi

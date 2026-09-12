@@ -593,36 +593,43 @@ Both submit scripts check the checkpoints before submitting and print how many o
 the 25 they found, so a half-trained experiment is visible immediately. `--fold`,
 `--train-cam` and `--eval-cam` all take `all` or a comma-separated list.
 
-Results are written to `<experiment_root>/exp_<id>/results`:
+Everything is written under `<experiment_root>/exp_<id>/evaluations`, and nothing
+is written into the training output — a fold directory keeps what the training
+run put there:
 
 ```text
-<prefix>_matrix_report.txt   the tables, the missing checkpoints, the warnings
-<prefix>_matrix_f1_1.csv     rendered 5x5 table, one file per metric
-<prefix>_matrix_f1_2_3.csv
-<prefix>_matrix_auc.csv
-<prefix>_matrix_long.csv     tidy: one row per (metric, train camera, test camera)
-<prefix>_matrix_cells.csv    every (train camera, test camera, fold) with its status
-cells/<model>_cells_<cam>.csv  one file per evaluation camera, written as it runs
-logs/matrix_eval_<cam>.log   per-task log, and a .status file beside it
+cam01@cam03.csv              trained on cam01, scored on cam03: one row per fold,
+                             so one file is one cell of the matrix
+cam01@cam01.csv              the diagonal is written too, and reproduces the
+                             training run's own test numbers
+...                          25 pair files for a complete run
+
+results/
+  <prefix>_matrix_report.txt   the tables, the missing checkpoints, the warnings
+  <prefix>_matrix_f1_1.csv     rendered 5x5 table, one file per metric
+  <prefix>_matrix_f1_2_3.csv
+  <prefix>_matrix_auc.csv
+  <prefix>_matrix_long.csv     tidy: one row per (metric, train camera, test camera)
+  <prefix>_matrix_cells.csv    every (train camera, test camera, fold) with its status
+  cells/<model>_cells_<cam>.csv  one file per evaluation camera, written as it runs
+  logs/matrix_eval_<cam>.log   per-task log, and a .status file beside it
 ```
 
 `<prefix>` is `lstm_mingling` or `dante_mingling`, the same names the aggregators
-use, so the two sets of tables are directly comparable.
+use, so the two sets of tables are directly comparable. A pair file is
+self-contained — `train_camera, test_camera, fold, split` and the seven metrics —
+and `PAIR_FILES=0` turns those files off, leaving the cells CSV as the only
+per-cell record.
+
+Because this output is separate from the fold directories, `aggregate_*.py` no
+longer sees the cross-camera numbers: their matrix stays diagonal-only, and the
+5x5 one comes from here.
 
 **A missing checkpoint is a warning, not an error.** The cell is recorded with
 `status=missing_checkpoint`, the evaluation continues, and the report names the
 absent file, says which camera rows are therefore averaged over fewer than five
 folds, and warns that those rows are not directly comparable with the complete
 ones. Cells that had a checkpoint but failed to score are listed separately.
-
-Off-diagonal cells are also mirrored to
-`exp_<id>/<train camera>/fold_<k>/eval_<eval camera>/metrics_summary.csv`, one of
-the layouts `camera_matrix.py` already recognises, so the two aggregators pick
-the cross-camera results up as well. The diagonal is computed (it is the same
-rule with column == row, and reproduces the training run's own test numbers) but
-not mirrored back, because the training run already wrote `metrics_summary` there
-and a second copy would trip the aggregators' duplicate check. `MIRROR_CELLS=0`
-turns the mirroring off.
 
 Either stage can be run by hand, outside Slurm:
 

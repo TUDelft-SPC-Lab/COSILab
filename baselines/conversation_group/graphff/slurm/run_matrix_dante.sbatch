@@ -39,7 +39,7 @@
 #   FOLDS=all                # which folds to score (all | 0,2)
 #   USE_GPU=0                # 1 runs TensorFlow on a GPU
 #   NO_POINTNET=0            # 1 reads <camera>/no_pointnet/fold_<k> models
-#   MIRROR_CELLS=1           # 0 skips the eval_<cam>/metrics_summary.csv copies
+#   PAIR_FILES=1             # 0 skips the evaluations/<train>@<test>.csv files
 #   DANTE_DATA_ROOT=/path/to/DANTE
 #   DANTE_EXPERIMENT_ROOT=/path/to/experiments
 #   APPTAINER_IMAGE=/path/to/image.sif
@@ -66,7 +66,7 @@ RUN_ID="${RUN_ID:-1}"
 TRAIN_CAMS="${TRAIN_CAMS:-all}"
 FOLDS="${FOLDS:-all}"
 NO_POINTNET="${NO_POINTNET:-0}"
-MIRROR_CELLS="${MIRROR_CELLS:-1}"
+PAIR_FILES="${PAIR_FILES:-1}"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
 DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE}"
 DANTE_USE_GPU="${USE_GPU:-${DANTE_USE_GPU:-0}}"
@@ -167,7 +167,8 @@ export NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 DANTE_ROOT="$PROJECT_ROOT/DANTE-master"
 PY_SCRIPT="$PROJECT_ROOT/scripts/evaluate_matrix_dante.py"
-RESULTS_ROOT="$DANTE_EXPERIMENT_ROOT/exp_$RUN_ID/results"
+# must match dante_paths.evaluation_results_dir
+RESULTS_ROOT="$DANTE_EXPERIMENT_ROOT/exp_$RUN_ID/evaluations/results"
 TASK_LOG_DIR="$RESULTS_ROOT/logs"
 TASK_LOG="$TASK_LOG_DIR/matrix_eval_cam${EVAL_CAM}.log"
 
@@ -198,7 +199,7 @@ echo "folds=$FOLDS"
 echo "results_root=$RESULTS_ROOT"
 echo "task_log=$TASK_LOG"
 echo "no_pointnet=$NO_POINTNET"
-echo "mirror_cells=$MIRROR_CELLS"
+echo "pair_files=$PAIR_FILES"
 echo "dante_use_gpu=$DANTE_USE_GPU"
 echo "dante_python_bin=${DANTE_PYTHON_BIN:-auto}"
 echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
@@ -213,7 +214,7 @@ apptainer_env_args=(
   --env TRAIN_CAMS="$TRAIN_CAMS"
   --env FOLDS="$FOLDS"
   --env NO_POINTNET="$NO_POINTNET"
-  --env MIRROR_CELLS="$MIRROR_CELLS"
+  --env PAIR_FILES="$PAIR_FILES"
   --env DANTE_DATA_ROOT="$DANTE_DATA_ROOT"
   --env DANTE_EXPERIMENT_ROOT="$DANTE_EXPERIMENT_ROOT"
   --env DANTE_USE_GPU="$DANTE_USE_GPU"
@@ -275,8 +276,8 @@ apptainer exec --cleanenv \
     if [[ "$NO_POINTNET" == "1" ]]; then
       args+=(--no-pointnet)
     fi
-    if [[ "$MIRROR_CELLS" == "0" ]]; then
-      args+=(--no-mirror-cells)
+    if [[ "$PAIR_FILES" == "0" ]]; then
+      args+=(--no-pair-files)
     fi
     "${PYBIN}" scripts/evaluate_matrix_dante.py "${args[@]}"
   ' 2>&1 | tee -a "$TASK_LOG"
