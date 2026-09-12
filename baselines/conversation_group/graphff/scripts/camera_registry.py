@@ -6,7 +6,7 @@ scripts import this *inside* the Apptainer image, and DANTE's environment
 (``dante_tf1``) has no pandas, so it cannot import ``camera_matrix``.
 
 ``camera_matrix`` imports the two tables from here, so the camera list and the
-session mapping have one definition rather than three.
+session mapping have one definition rather than several.
 """
 
 # flat camera order: mingling1 first, then mingling2. Cameras are compared

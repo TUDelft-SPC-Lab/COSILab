@@ -311,7 +311,7 @@ def main():
 
     # build_matrix wants pipeline/camera/test_camera/fold/split plus the metric
     # columns, which is exactly the cell schema
-    matrix = camera_matrix.build_matrix(cells, metrics=metrics, split_override="test")
+    matrix = camera_matrix.build_matrix(cells, metrics=metrics)
 
     written = []
     cells_path = os.path.join(results_root, spec["prefix"] + "_matrix_cells.csv")

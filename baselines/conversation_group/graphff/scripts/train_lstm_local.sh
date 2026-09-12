@@ -300,6 +300,8 @@ elapsed=$(( $(date +%s) - started ))
 printf 'done in %dh%02dm%02ds\n' $((elapsed/3600)) $((elapsed%3600/60)) $((elapsed%60))
 echo "results under $GRAPHFF_EXPERIMENT_ROOT/exp_$RUN_ID"
 echo
-echo "aggregate with:"
+echo "score every camera against every other, and build the 5x5 matrix, with:"
 echo "  GRAPHFF_EXPERIMENT_ROOT=$GRAPHFF_EXPERIMENT_ROOT \\"
-echo "    python3 scripts/aggregate_lstm_mingling_results.py --run-id $RUN_ID"
+echo "    python3 scripts/evaluate_matrix_lstm.py --exp-id $RUN_ID"
+echo "  GRAPHFF_EXPERIMENT_ROOT=$GRAPHFF_EXPERIMENT_ROOT \\"
+echo "    python3 scripts/build_matrix_report.py --model lstm --exp-id $RUN_ID"

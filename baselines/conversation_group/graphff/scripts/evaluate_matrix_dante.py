@@ -5,9 +5,9 @@ Reads the checkpoints of one experiment and scores each of them on every camera,
 producing one cell per (training camera, evaluation camera, fold). Nothing is
 trained here.
 
-One rule covers the whole matrix, the same one scripts/camera_matrix.py assumes:
-the model trained on camera r fold k is scored on **camera c's fold-k held-out
-test block** (that camera's own ``fold_k/test.p``), never on all of camera c.
+One rule covers the whole matrix: the model trained on camera r fold k is scored
+on **camera c's fold-k held-out test block** (that camera's own
+``fold_k/test.p``), never on all of camera c.
 Cameras inside a session film the same event, so scoring a whole camera would
 feed the model the very moments it trained on, seen from another angle. The
 diagonal is the c == r case of that rule, so it recomputes what the training run
@@ -37,7 +37,7 @@ status=missing_checkpoint and the run continues, so one absent fold costs a gap
 in the table rather than the whole matrix.
 
 Runs in the container's DANTE environment (TensorFlow 1.14 / Keras 2.2.2), which
-has no pandas -- hence no import of camera_matrix here.
+has no pandas -- hence the stdlib-only helpers and no import of camera_matrix.
 
 Example usage:
     python scripts/evaluate_matrix_dante.py --exp-id 1

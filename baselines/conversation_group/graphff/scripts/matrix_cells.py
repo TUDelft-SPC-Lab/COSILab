@@ -5,8 +5,8 @@ One row is one (training camera, evaluation camera, fold) evaluation: the model
 trained on ``camera`` fold ``fold``, scored on ``test_camera``'s fold-``fold``
 held-out test block. ``scripts/build_matrix_report.py`` reduces these rows to the
 5x5 matrix, and the column names are the ones ``camera_matrix.build_matrix``
-already expects (``pipeline``, ``camera``, ``test_camera``, ``fold``, ``split``
-plus the metric columns), so the rows feed it directly.
+reads (``pipeline``, ``camera``, ``test_camera``, ``fold``, ``split`` plus the
+metric columns), so the rows feed it directly.
 
 A row always exists, even when nothing could be computed: ``status`` says why.
 That is what makes a missing checkpoint visible in the results instead of simply
@@ -37,7 +37,7 @@ METRIC_FIELDS = (
 CELL_FIELDS = (
     "pipeline",
     "run_id",
-    "camera",          # the training camera; named to match the aggregators
+    "camera",          # the training camera; the name build_matrix groups by
     "train_session",
     "test_camera",     # where it was scored
     "test_session",

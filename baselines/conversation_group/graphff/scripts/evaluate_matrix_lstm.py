@@ -5,9 +5,8 @@ Reads the checkpoints of one experiment and scores each of them on every camera,
 producing one cell per (training camera, evaluation camera, fold). Nothing is
 trained here.
 
-One rule covers the whole matrix, the same one scripts/camera_matrix.py assumes:
-the model trained on camera r fold k is scored on **camera c's fold-k held-out
-test block**, never on all of camera c. Cameras inside a session film the same
+One rule covers the whole matrix: the model trained on camera r fold k is scored
+on **camera c's fold-k held-out test block**, never on all of camera c. Cameras inside a session film the same
 event, so scoring a whole camera would feed the model the very moments it trained
 on, seen from another angle. The diagonal is the c == r case of that rule, so it
 recomputes what the training run already reported and is a useful consistency

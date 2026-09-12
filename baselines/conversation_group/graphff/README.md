@@ -471,59 +471,16 @@ To submit the array script directly, bypassing the camera resolution:
 sbatch --export=ALL,DATASET=mingling1/cam06 slurm/run_dante.sbatch
 ```
 
-## Result Aggregation
+## Results: the camera x camera matrix
 
-Aggregate LSTM/GraphFF outputs:
+Training reports each model on the camera it was trained on, which fills one
+diagonal of a 5x5 table. The reported result is that whole table: rows the
+training camera, columns the evaluation camera, cells `mean ± std` over that
+row's five folds, so the std is always fold-level and camera-level variance is
+read off by comparing cells.
 
-```bash
-python scripts/aggregate_lstm_mingling_results.py
-```
-
-Aggregate DANTE outputs. This reads `$DANTE_EXPERIMENT_ROOT/exp_<run-id>` and
-defaults to the same `RUN_ID` the training jobs use, so it collates exactly one
-experiment:
-
-```bash
-python scripts/aggregate_dante_mingling_results.py                 # exp_1
-python scripts/aggregate_dante_mingling_results.py --run-id 2      # exp_2
-python scripts/aggregate_dante_mingling_results.py --all-runs      # every exp_*
-```
-
-`--all-runs` is for comparing experiments side by side; because the same
-`(camera, fold)` then appears once per experiment, it reports duplicates and
-needs `--allow-incomplete` to proceed.
-
-The LSTM aggregator expects per-fold outputs under `output/`; the DANTE
-aggregator expects them under the experiment root. Both write their aggregate
-CSV files to `output/` and both refuse to run unless all 25 fold summaries are
-present, which also catches a fold that failed or was trained twice. Pass
-`--allow-incomplete` to downgrade that to a warning. Generated outputs are
-ignored by Git.
-
-Each aggregate row carries the `mean` and `std` across folds of `auc`, `f1_1`,
-`precision_1`, `recall_1`, `f1_2_3`, `precision_2_3`, `recall_2_3`, plus `n_rows`
-for how many fold runs are behind it. Nothing is recomputed: the numbers come
-from each fold's `metrics_summary.csv`, written at the end of training using the
-restored best-validation-MSE weights.
-
-`_metrics_by_camera.csv`, `_metrics_by_session.csv` and `_metrics_overall.csv`
-cover models scored on the camera they were trained on. Their pooled `std` above
-camera level mixes fold-to-fold and camera-to-camera variation, so prefer the
-matrix below when reporting.
-
-### Camera x camera matrix
-
-Both aggregators also write a 5x5 generalisation matrix, rows the training
-camera and columns the evaluation camera, cells `mean ± std` over that row's five
-folds. The std is therefore always fold-level, and camera-level variance is read
-off by comparing cells:
-
-```text
-<prefix>_matrix_long.csv     tidy: one row per (metric, train camera, test camera)
-<prefix>_matrix_f1_1.csv     rendered 5x5 table, one file per metric
-<prefix>_matrix_f1_2_3.csv
-<prefix>_matrix_auc.csv
-```
+It is produced by a separate evaluation pass that reads the trained checkpoints
+of one experiment and scores each of them on every camera. Nothing is retrained.
 
 One rule covers the whole matrix: the model trained on camera r fold k is scored
 on **camera c's fold-k held-out test block**, never on all of camera c. Cameras
@@ -532,18 +489,12 @@ model the very moments it trained on from another angle. Restricting to fold k's
 block keeps the evaluated timestamps out of that fold's training data in every
 column, and makes all 25 cells the same size instead of comparing one block on
 the diagonal against a full recording off it. The diagonal is the `c == r` case
-of that same rule, so it stays identical to `_metrics_by_camera.csv` at
+of that same rule, and reproduces the training run's own `metrics_summary.csv` at
 `split=test`.
 
 This assumes both cameras' fold-k blocks cover the same moments. Folds are cut as
 equal fractions of each camera's own timeline, so cameras whose feature files
-span different frames leave a residual overlap that the aggregator cannot detect.
-
-Cells take the `test` split of each result file, falling back to a whole-camera
-`all`/`full` only if that is all a file offers — those cells are flagged in the
-tidy file's `fold_matched` column and named in a warning, since within a session
-they include training time and are not comparable to the rest of the table.
-`--matrix-split <label>` forces one label everywhere.
+span different frames leave a residual overlap that nothing here can detect.
 
 Cameras are listed flat in session order (`cam06, cam08, cam10` then `cam01,
 cam03`), so a session is a contiguous block rather than its own aggregation
@@ -551,26 +502,10 @@ level. The tidy file labels each cell `diagonal`, `within_session` or
 `cross_session`: within-session cells measure viewpoint robustness on held-out
 time, and the two cross-session blocks are unseen people as well.
 
-Cross-camera evaluation results are read from wherever they sit under
-`fold_<k>/`, identified by any one of:
+Nothing is recomputed from the training output: the numbers come from scoring the
+restored best-validation checkpoints, using each pipeline's own metric code.
 
-```text
-a test_camera / eval_camera / test_dataset / eval_dataset column in the CSV
-a subdirectory named eval_cam08 or eval_mingling1_cam08
-a filename token _eval=cam08, _test=mingling1_cam08 or _eval_on_cam08
-```
-
-A file with no such marker is treated as scoring its own camera, so a run with
-only in-repo training output yields a diagonal-only matrix plus a warning naming
-the 20 empty cells, rather than an error. Options: `--matrix-metrics`,
-`--matrix-split`, `--matrix-decimals`.
-
-## Cross-camera evaluation
-
-Training fills only the diagonal of that matrix: each job scores a model on the
-camera it was trained on. The 20 off-diagonal cells come from a separate
-evaluation pass that reads the trained checkpoints of one experiment and scores
-each of them on every camera. Nothing is retrained.
+### Running it
 
 ```bash
 bash slurm/submit_matrix_dante.sh                 # full 5x5 for exp_1
@@ -615,15 +550,15 @@ results/
   logs/matrix_eval_<cam>.log   per-task log, and a .status file beside it
 ```
 
-`<prefix>` is `lstm_mingling` or `dante_mingling`, the same names the aggregators
-use, so the two sets of tables are directly comparable. A pair file is
-self-contained — `train_camera, test_camera, fold, split` and the seven metrics —
-and `PAIR_FILES=0` turns those files off, leaving the cells CSV as the only
-per-cell record.
+`<prefix>` is `lstm_mingling` or `dante_mingling`, so the two pipelines' tables
+are named alike and read side by side. A pair file is self-contained —
+`train_camera, test_camera, fold, split` and the seven metrics — and
+`PAIR_FILES=0` turns those files off, leaving the cells CSV as the only per-cell
+record.
 
-Because this output is separate from the fold directories, `aggregate_*.py` no
-longer sees the cross-camera numbers: their matrix stays diagonal-only, and the
-5x5 one comes from here.
+Each fold's own `metrics_summary.csv` under `exp_<id>/<camera>/fold_<k>/` stays
+where training wrote it. Nothing reads it any more — it is the training run's
+record, and the matrix diagonal is the automated check on it.
 
 **A missing checkpoint is a warning, not an error.** The cell is recorded with
 `status=missing_checkpoint`, the evaluation continues, and the report names the
@@ -660,14 +595,12 @@ train.py                                     LSTM training loop
 analysis.py                                  AUC and export helpers
 evaluate_scene.py                            Scene-level group evaluation
 dominant_sets.py                             Dominant set clustering
-scripts/aggregate_lstm_mingling_results.py   LSTM result aggregation
-scripts/aggregate_dante_mingling_results.py  DANTE result aggregation
-scripts/camera_matrix.py                     Camera x camera matrix, shared by both
-scripts/camera_registry.py                   Camera list and sessions, stdlib only
-scripts/matrix_cells.py                      Per-cell record schema, stdlib only
 scripts/evaluate_matrix_lstm.py              LSTM cross-camera evaluation
 scripts/evaluate_matrix_dante.py             DANTE cross-camera evaluation
 scripts/build_matrix_report.py               Cells -> matrix tables and results file
+scripts/camera_matrix.py                     Cells -> 5x5 mean/std tables
+scripts/camera_registry.py                   Camera list and sessions, stdlib only
+scripts/matrix_cells.py                      Per-cell record schema, stdlib only
 DANTE-master/datasets/prepare_mingling.py    DANTE DS_utils generation
 DANTE-master/datasets/reformat_data.py       DANTE pairwise artifact generation
 DANTE-master/datasets/build_dataset.py       DANTE fold pickle generation
