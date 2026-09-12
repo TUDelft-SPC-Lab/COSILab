@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+# Submit the DANTE camera x camera evaluation of an already-trained experiment,
+# plus the report job that turns its cells into the 5x5 matrix.
+#
+# Nothing is trained here: every checkpoint of exp_$RUN_ID is scored on every
+# camera's fold-matched held-out test block.
+#
+# Usage:
+#   bash slurm/submit_matrix_dante.sh [--eval-cam=<cam>] [--train-cam=<cams>] [--fold=<n>]
+#
+#   --eval-cam=<cam>    which camera to score models ON. 06|08|10|01|03|all
+#                       (default all: one array task per camera)
+#   --train-cam=<cams>  which trained models to score. all, or a comma-separated
+#                       list (default all)
+#   --fold=<n>          single fold 0-4, or a comma-separated list; omit for all
+#
+# Examples:
+#   bash slurm/submit_matrix_dante.sh                      # full 5x5, exp_1
+#   RUN_ID=2 bash slurm/submit_matrix_dante.sh             # full 5x5, exp_2
+#   bash slurm/submit_matrix_dante.sh --eval-cam=06        # one column of the matrix
+#   bash slurm/submit_matrix_dante.sh --train-cam=06 --eval-cam=08  # one cell's folds
+#   DRY_RUN=1 bash slurm/submit_matrix_dante.sh
+#   REPORT_ONLY=1 bash slurm/submit_matrix_dante.sh        # rebuild the matrix only
+#
+# Results go to $DANTE_EXPERIMENT_ROOT/exp_$RUN_ID/results.
+#
+# Environment overrides:
+#   RUN_ID=1                  which experiment to read and write results for
+#   USE_GPU=0                 1 requests a GPU and runs TensorFlow on it
+#   NO_POINTNET=0             1 reads the <camera>/no_pointnet/ models
+#   MIRROR_CELLS=1            0 skips the eval_<cam>/metrics_summary.csv copies
+#   NO_REPORT=0               1 submits only the evaluation array
+#   REPORT_ONLY=0             1 submits only the report (no evaluation)
+#   DRY_RUN=0                 1 prints the sbatch lines without submitting
+#   MAIL_USER=z.li-25@tudelft.nl  empty disables mail entirely
+#   MAIL_TYPE=END,FAIL,ARRAY_TASKS
+#   DANTE_DATA_ROOT=...       benchmark artifacts to read
+#   DANTE_EXPERIMENT_ROOT=... where the trained experiment lives
+#   SLURM_LOG_DIR=...         Slurm stdout/stderr
+#   MATRIX_METRICS=f1_1,f1_2_3,auc
+#   EXTRA_EXPORTS='TRAIN_CAMS=06,FOLDS=0'
+#   SBATCH_ARGS='--constraint=...'
+
+set -euo pipefail
+
+if [[ -n "${PROJECT_ROOT:-}" ]]; then
+  PROJECT_ROOT="$PROJECT_ROOT"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
+
+EVAL_SCRIPT="$PROJECT_ROOT/slurm/run_matrix_dante.sbatch"
+REPORT_SCRIPT="$PROJECT_ROOT/slurm/run_matrix_report.sbatch"
+DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
+DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE}"
+SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/dante}"
+RUN_ID="${RUN_ID:-1}"
+USE_GPU="${USE_GPU:-0}"
+NO_POINTNET="${NO_POINTNET:-0}"
+MIRROR_CELLS="${MIRROR_CELLS:-1}"
+NO_REPORT="${NO_REPORT:-0}"
+REPORT_ONLY="${REPORT_ONLY:-0}"
+MATRIX_METRICS="${MATRIX_METRICS:-f1_1,f1_2_3,auc}"
+# `-` not `:-`: MAIL_USER= (explicitly empty) means "no mail", not "use the default"
+MAIL_USER="${MAIL_USER-z.li-25@tudelft.nl}"
+MAIL_TYPE="${MAIL_TYPE:-END,FAIL,ARRAY_TASKS}"
+
+ALL_CAMS=(06 08 10 01 03)
+
+usage() {
+  awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "${BASH_SOURCE[0]}"
+  exit "${1:-2}"
+}
+
+pad_cam() {
+  local cam="${1#cam}"
+  [[ "$cam" =~ ^[0-9]{1,2}$ ]] || return 1
+  printf '%02d' "$((10#$cam))"
+}
+
+index_of_cam() {
+  local target="$1" index=0
+  for cam in "${ALL_CAMS[@]}"; do
+    if [[ "$cam" == "$target" ]]; then
+      echo "$index"
+      return 0
+    fi
+    index=$((index + 1))
+  done
+  return 1
+}
+
+EVAL_CAM_ARG="all"
+TRAIN_CAM_ARG="all"
+FOLD_ARG="all"
+
+require_value() {
+  [[ "$2" -ge 2 ]] || { echo "[ERROR] $1 requires a value, e.g. $1=06" >&2; exit 2; }
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --eval-cam=*)  EVAL_CAM_ARG="${1#*=}"; shift ;;
+    --eval-cam)    require_value --eval-cam $#; EVAL_CAM_ARG="$2"; shift 2 ;;
+    --train-cam=*) TRAIN_CAM_ARG="${1#*=}"; shift ;;
+    --train-cam)   require_value --train-cam $#; TRAIN_CAM_ARG="$2"; shift 2 ;;
+    --fold=*)      FOLD_ARG="${1#*=}"; shift ;;
+    --fold)        require_value --fold $#; FOLD_ARG="$2"; shift 2 ;;
+    -h|--help|help) usage 0 ;;
+    --) shift; break ;;
+    -*) echo "[ERROR] unknown option: $1" >&2; usage 2 ;;
+    *)  echo "[ERROR] unexpected positional argument: $1" >&2
+        echo "        arguments are named, e.g. --eval-cam=06 --fold=2" >&2
+        usage 2 ;;
+  esac
+done
+
+[[ -f "$EVAL_SCRIPT" ]] || { echo "[ERROR] missing Slurm script: $EVAL_SCRIPT" >&2; exit 2; }
+[[ -f "$REPORT_SCRIPT" ]] || { echo "[ERROR] missing Slurm script: $REPORT_SCRIPT" >&2; exit 2; }
+EXPERIMENT_DIR="$DANTE_EXPERIMENT_ROOT/exp_$RUN_ID"
+[[ -d "$EXPERIMENT_DIR" ]] || {
+  echo "[ERROR] experiment not found: $EXPERIMENT_DIR" >&2
+  echo "        Train it first, or pass RUN_ID=<id> of the run that holds the models." >&2
+  exit 2
+}
+
+# which array tasks to submit; one array per camera keeps --eval-cam=06,10
+# working without assuming the indices are contiguous
+ARRAY_SPECS=()
+if [[ "$EVAL_CAM_ARG" == "all" ]]; then
+  ARRAY_SPECS=("0-4")
+else
+  IFS=',' read -r -a requested <<< "$EVAL_CAM_ARG"
+  for raw in "${requested[@]}"; do
+    cam="$(pad_cam "$raw")" || { echo "[ERROR] unknown camera: $raw" >&2; exit 2; }
+    index="$(index_of_cam "$cam")" || {
+      echo "[ERROR] unknown camera: $raw (expected one of ${ALL_CAMS[*]}, or all)" >&2
+      exit 2
+    }
+    ARRAY_SPECS+=("$index-$index")
+  done
+fi
+
+# Preflight the checkpoints so a half-trained experiment is visible now rather
+# than only in the report. Missing ones are a warning: the rest of the table is
+# still worth computing, and the report records exactly which cells are affected.
+pointnet_dir=""
+if [[ "$NO_POINTNET" == "1" ]]; then
+  pointnet_dir="/no_pointnet"
+fi
+found=0
+missing=()
+for cam in "${ALL_CAMS[@]}"; do
+  for fold in 0 1 2 3 4; do
+    if [[ -f "$EXPERIMENT_DIR/cam$cam$pointnet_dir/fold_$fold/best_val_model.h5" ]]; then
+      found=$((found + 1))
+    else
+      missing+=("cam$cam/fold_$fold")
+    fi
+  done
+done
+if [[ "$found" -eq 0 ]]; then
+  echo "[ERROR] no DANTE checkpoints found under $EXPERIMENT_DIR" >&2
+  echo "        Expected files like cam06$pointnet_dir/fold_0/best_val_model.h5" >&2
+  echo "        Check RUN_ID (and NO_POINTNET) against the training run." >&2
+  exit 2
+fi
+
+# Slurm rejects a job outright if the --output directory does not already exist.
+if [[ ! -d "$SLURM_LOG_DIR" ]]; then
+  if mkdir -p "$SLURM_LOG_DIR" 2>/dev/null; then
+    echo "created slurm log dir: $SLURM_LOG_DIR"
+  elif [[ "${DRY_RUN:-0}" == "1" ]]; then
+    echo "[WARN] slurm log dir is missing and not creatable here: $SLURM_LOG_DIR" >&2
+  else
+    echo "[ERROR] slurm log dir does not exist and could not be created: $SLURM_LOG_DIR" >&2
+    exit 2
+  fi
+fi
+
+echo "data root:       $DANTE_DATA_ROOT"
+echo "experiment:      $EXPERIMENT_DIR"
+echo "results:         $EXPERIMENT_DIR/results"
+echo "slurm log dir:   $SLURM_LOG_DIR"
+echo "eval cameras:    $EVAL_CAM_ARG"
+echo "train cameras:   $TRAIN_CAM_ARG"
+echo "folds:           $FOLD_ARG"
+echo "gpu:             $USE_GPU"
+echo "no_pointnet:     $NO_POINTNET"
+echo "checkpoints:     $found of 25 found"
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "[WARN] ${#missing[@]} checkpoints are missing: ${missing[*]}"
+  echo "[WARN] those cells stay empty and are named in the results file."
+fi
+echo "mail:            ${MAIL_USER:-<disabled>} (${MAIL_TYPE})"
+echo
+
+SBATCH_MAIL_ARGS=()
+if [[ -n "$MAIL_USER" ]]; then
+  SBATCH_MAIL_ARGS=(--mail-user="$MAIL_USER" --mail-type="$MAIL_TYPE")
+else
+  SBATCH_MAIL_ARGS=(--mail-type=NONE)
+fi
+
+SBATCH_EXTRA_ARGS=()
+if [[ -n "${SBATCH_ARGS:-}" ]]; then
+  read -r -a SBATCH_EXTRA_ARGS <<< "$SBATCH_ARGS"
+fi
+
+SBATCH_RESOURCE_ARGS=()
+if [[ "$USE_GPU" == "1" ]]; then
+  SBATCH_RESOURCE_ARGS=(--gres=gpu:1 --mem=32G --cpus-per-task=2)
+elif [[ "$USE_GPU" != "0" ]]; then
+  echo "[ERROR] USE_GPU must be 0 or 1, got: $USE_GPU" >&2
+  exit 2
+fi
+
+export_arg="ALL,RUN_ID=$RUN_ID,TRAIN_CAMS=$TRAIN_CAM_ARG,FOLDS=$FOLD_ARG"
+export_arg="$export_arg,USE_GPU=$USE_GPU,NO_POINTNET=$NO_POINTNET,MIRROR_CELLS=$MIRROR_CELLS"
+export_arg="$export_arg,DANTE_DATA_ROOT=$DANTE_DATA_ROOT,DANTE_EXPERIMENT_ROOT=$DANTE_EXPERIMENT_ROOT"
+if [[ -n "${EXTRA_EXPORTS:-}" ]]; then
+  export_arg="$export_arg,$EXTRA_EXPORTS"
+fi
+
+eval_job_ids=()
+if [[ "$REPORT_ONLY" != "1" ]]; then
+  for spec in "${ARRAY_SPECS[@]}"; do
+    sbatch_args=(
+      --job-name=dante-matrix
+      --array="$spec"
+      --output="$SLURM_LOG_DIR/slurm-%x-%A_%a.out"
+      --error="$SLURM_LOG_DIR/slurm-%x-%A_%a.err"
+    )
+    sbatch_args+=("${SBATCH_MAIL_ARGS[@]}")
+    if [[ ${#SBATCH_RESOURCE_ARGS[@]} -gt 0 ]]; then
+      sbatch_args+=("${SBATCH_RESOURCE_ARGS[@]}")
+    fi
+    if [[ ${#SBATCH_EXTRA_ARGS[@]} -gt 0 ]]; then
+      sbatch_args+=("${SBATCH_EXTRA_ARGS[@]}")
+    fi
+    sbatch_args+=(--export="$export_arg" "$EVAL_SCRIPT")
+
+    if [[ "${DRY_RUN:-0}" == "1" ]]; then
+      printf 'sbatch --parsable'
+      printf ' %q' "${sbatch_args[@]}"
+      printf '\n'
+      eval_job_ids+=("<array-job-id>")
+    else
+      job_id="$(sbatch --parsable "${sbatch_args[@]}")"
+      echo "submitted evaluation array $job_id (tasks $spec)"
+      eval_job_ids+=("$job_id")
+    fi
+  done
+fi
+
+if [[ "$NO_REPORT" == "1" ]]; then
+  echo
+  echo "report not submitted (NO_REPORT=1). Build it later with:"
+  echo "  RUN_ID=$RUN_ID MODEL=dante sbatch slurm/run_matrix_report.sbatch"
+  exit 0
+fi
+
+report_args=(
+  --job-name=dante-matrix-report
+  --output="$SLURM_LOG_DIR/slurm-%x-%j.out"
+  --error="$SLURM_LOG_DIR/slurm-%x-%j.err"
+)
+report_args+=("${SBATCH_MAIL_ARGS[@]}")
+if [[ ${#eval_job_ids[@]} -gt 0 ]]; then
+  # afterany, not afterok: a partial matrix that names what is missing beats no
+  # matrix at all, and naming it is the report's purpose
+  dependency="afterany"
+  for job_id in "${eval_job_ids[@]}"; do
+    dependency="$dependency:$job_id"
+  done
+  report_args+=(--dependency="$dependency" --kill-on-invalid-dep=yes)
+fi
+report_args+=(--export="ALL,MODEL=dante,RUN_ID=$RUN_ID,MATRIX_METRICS=$MATRIX_METRICS,DANTE_EXPERIMENT_ROOT=$DANTE_EXPERIMENT_ROOT" "$REPORT_SCRIPT")
+
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+  printf 'sbatch'
+  printf ' %q' "${report_args[@]}"
+  printf '\n'
+else
+  report_id="$(sbatch --parsable "${report_args[@]}")"
+  echo "submitted report job $report_id"
+  echo
+  echo "results will appear in $EXPERIMENT_DIR/results:"
+  echo "  dante_mingling_matrix_report.txt   tables, missing checkpoints, warnings"
+  echo "  dante_mingling_matrix_f1_1.csv     one rendered 5x5 table per metric"
+  echo "  dante_mingling_matrix_long.csv     tidy mean/std per cell"
+  echo "  dante_mingling_matrix_cells.csv    every cell, with its status"
+fi

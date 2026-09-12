@@ -565,6 +565,81 @@ only in-repo training output yields a diagonal-only matrix plus a warning naming
 the 20 empty cells, rather than an error. Options: `--matrix-metrics`,
 `--matrix-split`, `--matrix-decimals`.
 
+## Cross-camera evaluation
+
+Training fills only the diagonal of that matrix: each job scores a model on the
+camera it was trained on. The 20 off-diagonal cells come from a separate
+evaluation pass that reads the trained checkpoints of one experiment and scores
+each of them on every camera. Nothing is retrained.
+
+```bash
+bash slurm/submit_matrix_dante.sh                 # full 5x5 for exp_1
+bash slurm/submit_matrix_lstm.sh
+RUN_ID=2 bash slurm/submit_matrix_lstm.sh         # exp_2 instead
+bash slurm/submit_matrix_lstm.sh --eval-cam=06    # one column of the matrix
+bash slurm/submit_matrix_lstm.sh --train-cam=06 --eval-cam=08   # one cell
+DRY_RUN=1 bash slurm/submit_matrix_dante.sh
+REPORT_ONLY=1 bash slurm/submit_matrix_lstm.sh    # rebuild the tables only
+```
+
+Each submission queues two things: an array with **one task per evaluation
+camera** (that task loads the camera's data once and scores all five cameras'
+models on it, for every fold), and a small report job depending on the array with
+`afterany`, which reduces the cells to the matrix. The dependency is `afterany`
+and not `afterok` on purpose — a partial matrix that names what is missing is
+more useful than no matrix at all.
+
+Both submit scripts check the checkpoints before submitting and print how many of
+the 25 they found, so a half-trained experiment is visible immediately. `--fold`,
+`--train-cam` and `--eval-cam` all take `all` or a comma-separated list.
+
+Results are written to `<experiment_root>/exp_<id>/results`:
+
+```text
+<prefix>_matrix_report.txt   the tables, the missing checkpoints, the warnings
+<prefix>_matrix_f1_1.csv     rendered 5x5 table, one file per metric
+<prefix>_matrix_f1_2_3.csv
+<prefix>_matrix_auc.csv
+<prefix>_matrix_long.csv     tidy: one row per (metric, train camera, test camera)
+<prefix>_matrix_cells.csv    every (train camera, test camera, fold) with its status
+cells/<model>_cells_<cam>.csv  one file per evaluation camera, written as it runs
+logs/matrix_eval_<cam>.log   per-task log, and a .status file beside it
+```
+
+`<prefix>` is `lstm_mingling` or `dante_mingling`, the same names the aggregators
+use, so the two sets of tables are directly comparable.
+
+**A missing checkpoint is a warning, not an error.** The cell is recorded with
+`status=missing_checkpoint`, the evaluation continues, and the report names the
+absent file, says which camera rows are therefore averaged over fewer than five
+folds, and warns that those rows are not directly comparable with the complete
+ones. Cells that had a checkpoint but failed to score are listed separately.
+
+Off-diagonal cells are also mirrored to
+`exp_<id>/<train camera>/fold_<k>/eval_<eval camera>/metrics_summary.csv`, one of
+the layouts `camera_matrix.py` already recognises, so the two aggregators pick
+the cross-camera results up as well. The diagonal is computed (it is the same
+rule with column == row, and reproduces the training run's own test numbers) but
+not mirrored back, because the training run already wrote `metrics_summary` there
+and a second copy would trip the aggregators' duplicate check. `MIRROR_CELLS=0`
+turns the mirroring off.
+
+Either stage can be run by hand, outside Slurm:
+
+```bash
+python scripts/evaluate_matrix_lstm.py  --exp-id 1 --eval-cam 06
+python scripts/evaluate_matrix_dante.py --exp-id 1 --eval-cam 06
+python scripts/build_matrix_report.py   --model lstm --exp-id 1
+```
+
+The DANTE evaluator runs in the container's `dante_tf1` environment and the LSTM
+one in `py371`; the report needs pandas, so it runs in `py371` for both.
+
+Distances are normalised per camera inside the LSTM's `get_data`, so a
+cross-camera cell uses the *evaluation* camera's normalisation — the training
+camera's min/max is not a property of the model. For DANTE, the ground-truth
+groups and positions likewise come from the evaluation camera's `DS_utils`.
+
 ## Main Files
 
 ```text
@@ -581,6 +656,11 @@ dominant_sets.py                             Dominant set clustering
 scripts/aggregate_lstm_mingling_results.py   LSTM result aggregation
 scripts/aggregate_dante_mingling_results.py  DANTE result aggregation
 scripts/camera_matrix.py                     Camera x camera matrix, shared by both
+scripts/camera_registry.py                   Camera list and sessions, stdlib only
+scripts/matrix_cells.py                      Per-cell record schema, stdlib only
+scripts/evaluate_matrix_lstm.py              LSTM cross-camera evaluation
+scripts/evaluate_matrix_dante.py             DANTE cross-camera evaluation
+scripts/build_matrix_report.py               Cells -> matrix tables and results file
 DANTE-master/datasets/prepare_mingling.py    DANTE DS_utils generation
 DANTE-master/datasets/reformat_data.py       DANTE pairwise artifact generation
 DANTE-master/datasets/build_dataset.py       DANTE fold pickle generation
@@ -592,6 +672,11 @@ slurm/submit_lstm.sh                         LSTM submission, camera number -> d
 slurm/run_lstm.sbatch                        LSTM job array, one task per fold
 slurm/submit_dante.sh                        DANTE submission, camera number -> dataset
 slurm/run_dante.sbatch                       DANTE job array, one task per fold
+slurm/submit_matrix_lstm.sh                  LSTM cross-camera evaluation + report
+slurm/run_matrix_lstm.sbatch                 LSTM eval array, one task per eval camera
+slurm/submit_matrix_dante.sh                 DANTE cross-camera evaluation + report
+slurm/run_matrix_dante.sbatch                DANTE eval array, one task per eval camera
+slurm/run_matrix_report.sbatch               Matrix report, shared by both pipelines
 ```
 
 ## Repository Policy

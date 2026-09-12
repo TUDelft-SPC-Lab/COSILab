@@ -40,15 +40,12 @@ from pathlib import Path
 
 import pandas as pd
 
-# flat camera order: mingling1 first, then mingling2
-CAMERA_ORDER = ("cam06", "cam08", "cam10", "cam01", "cam03")
-CAMERA_SESSION = {
-    "cam06": "mingling1",
-    "cam08": "mingling1",
-    "cam10": "mingling1",
-    "cam01": "mingling2",
-    "cam03": "mingling2",
-}
+# flat camera order (mingling1 first, then mingling2) and the session mapping
+# live in camera_registry: the cross-camera evaluators need them inside the
+# container, where DANTE's environment has no pandas and so cannot import this
+# module.
+from camera_registry import CAMERA_ORDER, CAMERA_SESSION  # noqa: F401
+
 DEFAULT_MATRIX_METRICS = ("f1_1", "f1_2_3", "auc")
 
 # Every cell wants the fold's held-out block on the evaluation camera, which both
