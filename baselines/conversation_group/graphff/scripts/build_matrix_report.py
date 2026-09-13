@@ -217,6 +217,9 @@ def build_report(model, args, paths_module, results_root, cells, cell_files,
     add("cells           : %d (%s)" % (
         len(cells),
         ", ".join("%s=%d" % item for item in sorted(status_counts.items()))))
+    # printed because a truncated --matrix-metrics is otherwise invisible: the
+    # tables that were never asked for simply do not appear
+    add("metrics         : " + ", ".join(metrics))
     add()
     add("Every cell is the model trained on the row camera's fold k, scored on the")
     add("column camera's fold-k held-out test block. Cells are mean +- std over that")

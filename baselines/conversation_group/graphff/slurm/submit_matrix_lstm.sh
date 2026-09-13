@@ -221,6 +221,7 @@ echo "train cameras:   $TRAIN_CAM_ARG"
 echo "folds:           $FOLD_ARG"
 echo "gpu:             $USE_GPU"
 echo "distance scale:  $([[ "$DISTANCE_RESCALE" == "1" ]] && echo "$DISTANCE_SCALERS" || echo "<not rescaled>")"
+echo "matrix metrics:  $MATRIX_METRICS"
 echo "checkpoints:     $found of 25 found"
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "[WARN] ${#missing[@]} checkpoints are missing: ${missing[*]}"
@@ -249,11 +250,20 @@ elif [[ "$USE_GPU" != "0" ]]; then
   exit 2
 fi
 
-export_arg="ALL,RUN_ID=$RUN_ID,TRAIN_CAMS=$TRAIN_CAM_ARG,FOLDS=$FOLD_ARG"
-export_arg="$export_arg,USE_GPU=$USE_GPU,REBUILD_DATA=$REBUILD_DATA,PAIR_FILES=$PAIR_FILES"
-export_arg="$export_arg,DISTANCE_RESCALE=$DISTANCE_RESCALE,DISTANCE_SCALERS=$DISTANCE_SCALERS"
-export_arg="$export_arg,SEQ_LEN=$SEQ_LEN,FRAME_STRIDE=$FRAME_STRIDE"
-export_arg="$export_arg,GRAPHFF_DATA_ROOT=$GRAPHFF_DATA_ROOT,GRAPHFF_EXPERIMENT_ROOT=$GRAPHFF_EXPERIMENT_ROOT"
+# sbatch --export takes a comma-separated list, so a value that itself contains a
+# comma -- a camera list, a fold list, the metric list -- is cut at the first one
+# and the remainder is read as further variable names to import. Everything the
+# job needs therefore travels through the environment that ALL propagates, which
+# has no such parsing. EXTRA_EXPORTS keeps the inline form: it is the documented
+# escape hatch and its values must not contain commas.
+TRAIN_CAMS="$TRAIN_CAM_ARG"
+FOLDS="$FOLD_ARG"
+export RUN_ID TRAIN_CAMS FOLDS USE_GPU REBUILD_DATA PAIR_FILES
+export DISTANCE_RESCALE DISTANCE_SCALERS SEQ_LEN FRAME_STRIDE
+export GRAPHFF_DATA_ROOT GRAPHFF_EXPERIMENT_ROOT
+export MODEL=lstm MATRIX_METRICS
+
+export_arg="ALL"
 if [[ -n "${EXTRA_EXPORTS:-}" ]]; then
   export_arg="$export_arg,$EXTRA_EXPORTS"
 fi
@@ -311,7 +321,7 @@ if [[ ${#eval_job_ids[@]} -gt 0 ]]; then
   done
   report_args+=(--dependency="$dependency" --kill-on-invalid-dep=yes)
 fi
-report_args+=(--export="ALL,MODEL=lstm,RUN_ID=$RUN_ID,MATRIX_METRICS=$MATRIX_METRICS,GRAPHFF_EXPERIMENT_ROOT=$GRAPHFF_EXPERIMENT_ROOT" "$REPORT_SCRIPT")
+report_args+=(--export="$export_arg" "$REPORT_SCRIPT")
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   printf 'sbatch'
