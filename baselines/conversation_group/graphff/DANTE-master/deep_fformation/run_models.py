@@ -65,6 +65,14 @@ def get_args():
         help="replace an existing fold output directory (default)")
     parser.add_argument('--no-overwrite', dest='overwrite', action='store_false',
         help="refuse to run if the fold output directory already exists")
+    parser.add_argument('--resume', dest='resume', action='store_true',
+        default=os.environ.get('RESUME', '0').strip() == '1',
+        help="continue a fold that was killed part way through, from the "
+             "checkpoint in its output directory, instead of replacing it "
+             "(default from RESUME, else off). Takes precedence over "
+             "--overwrite; a fold with no checkpoint yet starts normally")
+    parser.add_argument('--no-resume', dest='resume', action='store_false',
+        help="always train from epoch 0, even if a checkpoint exists")
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -130,4 +138,4 @@ if __name__ == "__main__":
         symmetric=args.symmetric, batch_size=args.batch_size,
         patience=args.patience, min_delta=args.min_delta,
         f1_eval_every=args.f1_eval_every, run_id=args.run_id,
-        overwrite=args.overwrite, arch_seed=arch_seed)
+        overwrite=args.overwrite, arch_seed=arch_seed, resume=args.resume)

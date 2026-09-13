@@ -19,10 +19,17 @@
 #   DRY_RUN=1 bash slurm/submit_dante.sh --cam=all
 #   USE_GPU=1 bash slurm/submit_dante.sh --cam=06
 #   RUN_ID=2 bash slurm/submit_dante.sh --cam=all
+#   RESUME=1 bash slurm/submit_dante.sh --cam=03 --fold=4   # continue a timeout
 #
 # Environment overrides:
 #   RUN_ID=1                  output goes to <exp_root>/exp_$RUN_ID/...
 #   OVERWRITE=1               0 refuses to run when a fold directory exists
+#   RESUME=0                  1 continues folds that were killed part way through
+#                             from their checkpoints instead of retraining them;
+#                             takes precedence over OVERWRITE. Folds with no
+#                             checkpoint yet start normally, so this is safe to
+#                             set for a whole camera. Resubmit a TIMEOUT fold
+#                             with RESUME=1 to carry on where it stopped.
 #   USE_GPU=0                 1 requests a GPU and runs TensorFlow on it
 #   DRY_RUN=0                 1 prints the sbatch lines without submitting
 #   MAIL_USER=z.li-25@tudelft.nl  empty disables mail entirely
@@ -52,6 +59,7 @@ DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon
 SLURM_LOG_DIR="${SLURM_LOG_DIR:-/home/nfs/zli33/slurm_outputs/dante}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
+RESUME="${RESUME:-0}"
 USE_GPU="${USE_GPU:-0}"
 # ARRAY_TASKS makes Slurm mail per array task; without it one summary mail per
 # array is sent instead, which reports the array as a whole ("Mixed")
@@ -131,6 +139,7 @@ for cam in "${CAMS[@]}"; do
   DATASETS+=("$dataset")
 done
 
+[[ "$RESUME" == "0" || "$RESUME" == "1" ]] || { echo "[ERROR] RESUME must be 0 or 1, got: $RESUME" >&2; exit 2; }
 [[ -f "$SCRIPT" ]] || { echo "[ERROR] missing Slurm script: $SCRIPT" >&2; exit 2; }
 [[ -d "$DANTE_DATA_ROOT" ]] || { echo "[ERROR] data root not found: $DANTE_DATA_ROOT" >&2; exit 2; }
 
@@ -180,6 +189,7 @@ echo "cameras:         ${DATASETS[*]}"
 echo "folds:           $ARRAY_SPEC"
 echo "gpu:             $USE_GPU"
 echo "overwrite:       $OVERWRITE"
+echo "resume:          $RESUME"
 echo "arch seed:       ${ARCH_SEED:-derived from dataset/run_id/fold}"
 echo "mail:            ${MAIL_USER:-<disabled>} (${MAIL_TYPE})"
 echo
@@ -195,7 +205,7 @@ for dataset in "${DATASETS[@]}"; do
   done
 
   job_name="dante-$(basename "$dataset")"
-  export_arg="ALL,DATASET=$dataset,RUN_ID=$RUN_ID,OVERWRITE=$OVERWRITE,USE_GPU=$USE_GPU"
+  export_arg="ALL,DATASET=$dataset,RUN_ID=$RUN_ID,OVERWRITE=$OVERWRITE,RESUME=$RESUME,USE_GPU=$USE_GPU"
   export_arg="$export_arg,DANTE_DATA_ROOT=$DANTE_DATA_ROOT,DANTE_EXPERIMENT_ROOT=$DANTE_EXPERIMENT_ROOT"
   if [[ -n "$ARCH_SEED" ]]; then
     export_arg="$export_arg,ARCH_SEED=$ARCH_SEED"

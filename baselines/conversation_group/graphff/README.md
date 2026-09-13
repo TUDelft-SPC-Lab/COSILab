@@ -369,6 +369,9 @@ $DANTE_EXPERIMENT_ROOT/
         results.txt
         metrics_summary.csv
         best_val_model.h5
+        best_checkpoint.txt    # epoch and val MSE the .h5 currently holds
+        training_state.json    # resume state: epoch, curves, early stopping
+        last_model.h5          # only while training; removed when the fold ends
         tb/                    # TensorBoard events
       fold_1/ ... fold_4/
       logs/
@@ -379,6 +382,45 @@ $DANTE_EXPERIMENT_ROOT/
 
 Outputs are keyed by camera alone — no session directory, since camera numbers are
 unique across sessions and results are compared camera against camera.
+
+`best_val_model.h5` is rewritten every time validation MSE improves, not only at
+the end of training, so a fold killed at the wall clock limit still leaves its
+best model behind; `best_checkpoint.txt` says which epoch that file came from.
+A `TIMEOUT` fold therefore has a usable checkpoint but no `results.txt` or
+`metrics_summary.csv` — run `deep_fformation/evaluate_model.py -m <fold dir>` to
+score it, or resume the fold and let it finish normally.
+
+### Resuming a fold that ran out of wall clock time
+
+600 epochs do not always fit in one job: cam03 in particular runs at roughly
+13 min/epoch on CPU, so a 32 h task gets through about 150 of them. `RESUME=1`
+continues such a fold from its checkpoint instead of retraining it:
+
+```bash
+RESUME=1 bash slurm/submit_dante.sh --cam=03 --fold=4
+```
+
+It resumes from `last_model.h5`, which carries the Adam state as well as the
+weights, so training continues rather than restarting the optimizer mid-run.
+`training_state.json` brings back the loss curves `results.txt` reports, the
+best-so-far that decides whether a later epoch may overwrite
+`best_val_model.h5`, and the early-stopping patience counter — without that last
+one a resumed fold would get a fresh 50-epoch budget every time it is
+resubmitted. Resubmit as often as needed; each job continues where the previous
+one stopped, and the fold ends the usual way once it early-stops or reaches
+`EPOCHS`.
+
+- `RESUME=1` takes precedence over `OVERWRITE`: it keeps the fold directory
+  rather than replacing it.
+- A fold with no `training_state.json` yet is trained from scratch, so
+  `RESUME=1` is safe to set for a whole camera or for `--cam=all`.
+- Resuming into a run that would build a different model (a different
+  `ARCH_SEED`, `NO_POINTNET`, `SYMMETRIC`, camera or fold) stops with an error
+  naming the field instead of training a mismatched architecture. Use a
+  different `RUN_ID` for that, or drop `RESUME`.
+- Resubmitting a finished fold with `RESUME=1` re-scores its best checkpoint and
+  rewrites `results.txt` and `metrics_summary.csv` without retraining — which is
+  also how to recover a fold killed between the last epoch and those files.
 
 `RUN_ID` is shared by all five tasks of a 5-fold array, so the folds land side by
 side rather than each claiming its own directory. Re-running with the same
@@ -459,6 +501,7 @@ DRY_RUN=1   bash slurm/submit_dante.sh --cam=all   # print sbatch lines, submit 
 USE_GPU=1   bash slurm/submit_dante.sh --cam=06    # GPU profile instead of CPU
 RUN_ID=2    bash slurm/submit_dante.sh --cam=all   # write to exp_2 instead of exp_1
 OVERWRITE=0 bash slurm/submit_dante.sh --cam=06    # refuse if the fold already exists
+RESUME=1    bash slurm/submit_dante.sh --cam=03    # continue folds that ran out of time
 EXTRA_EXPORTS='EPOCHS=300,PATIENCE=30' bash slurm/submit_dante.sh --cam=06
 ```
 

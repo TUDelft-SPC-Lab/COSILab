@@ -38,6 +38,10 @@
 # Environment overrides:
 #   RUN_ID=1             # output goes to <exp_root>/exp_$RUN_ID/<camera>/fold_$FOLD
 #   OVERWRITE=1          # 0 refuses to run when that fold directory already exists
+#   RESUME=0             # 1 continues a fold that was killed part way through,
+#                        # from the checkpoint in its output directory, instead
+#                        # of retraining it; takes precedence over OVERWRITE.
+#                        # Resubmit a TIMEOUT fold with RESUME=1 to carry on.
 #   ARCH_SEED=           # seed for the random architecture search; empty means
 #                        # derive it from dataset/run_id/fold (reproducible),
 #                        # -1 draws from OS entropy (old behaviour)
@@ -68,6 +72,7 @@ FOLD="${SLURM_ARRAY_TASK_ID:-${FOLD:-0}}"
 DATASET="${DATASET:-mingling1/cam06}"
 RUN_ID="${RUN_ID:-1}"
 OVERWRITE="${OVERWRITE:-1}"
+RESUME="${RESUME:-0}"
 DANTE_DATA_ROOT="${DANTE_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/DANTE}"
 DANTE_EXPERIMENT_ROOT="${DANTE_EXPERIMENT_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B2_pipeline/DANTE}"
 EPOCHS="${EPOCHS:-600}"
@@ -200,6 +205,7 @@ DATASET_OUT_DIR="$DANTE_EXPERIMENT_ROOT/exp_$RUN_ID/$CAMERA"
 DATASET_LOG_DIR="$DATASET_OUT_DIR/logs"
 FOLD_LOG="$DATASET_LOG_DIR/fold_${FOLD}.log"
 
+[[ "$RESUME" == "0" || "$RESUME" == "1" ]] || { echo "[ERROR] RESUME must be 0 or 1, got: $RESUME" >&2; exit 2; }
 [[ -f "$APPTAINER_IMAGE" ]] || { echo "[ERROR] image not found: $APPTAINER_IMAGE" >&2; exit 2; }
 [[ -f "$RUN_SCRIPT" ]] || { echo "[ERROR] DANTE train script not found: $RUN_SCRIPT" >&2; exit 2; }
 [[ -d "$DATASET_DIR" ]] || { echo "[ERROR] DANTE dataset dir not found: $DATASET_DIR" >&2; exit 2; }
@@ -229,6 +235,7 @@ echo "dataset_dir=$DATASET_DIR"
 echo "fold=$FOLD"
 echo "run_id=$RUN_ID"
 echo "overwrite=$OVERWRITE"
+echo "resume=$RESUME"
 echo "fold_output_dir=$DATASET_OUT_DIR/fold_$FOLD"
 echo "fold_log=$FOLD_LOG"
 echo "epochs=$EPOCHS"
@@ -252,6 +259,7 @@ apptainer_env_args=(
   --env FOLD="$FOLD"
   --env RUN_ID="$RUN_ID"
   --env OVERWRITE="$OVERWRITE"
+  --env RESUME="$RESUME"
   --env DANTE_DATA_ROOT="$DANTE_DATA_ROOT"
   --env DANTE_EXPERIMENT_ROOT="$DANTE_EXPERIMENT_ROOT"
   --env EPOCHS="$EPOCHS"
@@ -380,6 +388,11 @@ PY
     fi
     if [[ "$OVERWRITE" == "0" ]]; then
       args+=("--no-overwrite")
+    fi
+    if [[ "$RESUME" == "1" ]]; then
+      args+=("--resume")
+    else
+      args+=("--no-resume")
     fi
     "${PYBIN}" run_models.py "${args[@]}"
   ' 2>&1 | tee -a "$FOLD_LOG"
