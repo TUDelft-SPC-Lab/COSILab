@@ -322,8 +322,11 @@ def main():
     matrix.to_csv(long_path, index=False)
     written.append(long_path)
 
+    # one rendered table per requested metric; a metric that produced nothing is
+    # said so out loud rather than silently leaving no file
     for metric in metrics:
         if matrix.empty or metric not in set(matrix["metric"]):
+            print("WARNING: no table for %r: the cells carry no such metric" % metric)
             continue
         wide = camera_matrix.to_wide(matrix, metric, decimals=args.matrix_decimals)
         wide_path = os.path.join(

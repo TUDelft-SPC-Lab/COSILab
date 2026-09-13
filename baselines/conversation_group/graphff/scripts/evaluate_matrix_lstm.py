@@ -12,10 +12,13 @@ on, seen from another angle. The diagonal is the c == r case of that rule, so it
 recomputes what the training run already reported and is a useful consistency
 check on this script.
 
-Distances are normalised per camera inside get_data, so a cross-camera cell uses
-the evaluation camera's own normalisation. That is the only sensible choice here
-(the training camera's min/max is not a property of the model), but it is part of
-what an off-diagonal number means.
+Distances are normalised per camera inside get_data, by that camera's own global
+min/max, and the five cameras disagree on that scale by up to 9x. A frozen model
+handed the evaluation camera's normalisation reads every pair as far apart and
+predicts no groups, so each cell first converts the evaluation camera's distance
+channel to the training camera's scale (scripts/distance_scalers.py). The
+conversion is the identity on the diagonal. --no-distance-rescale turns it off,
+which reproduces the uncorrected numbers.
 
 Outputs, all under <experiment_root>/exp_<id>/evaluations:
 
@@ -60,6 +63,7 @@ import torch  # noqa: E402
 import sklearn.metrics  # noqa: E402
 
 import camera_registry  # noqa: E402
+import distance_scalers  # noqa: E402
 import matrix_cells  # noqa: E402
 
 import graphff_paths  # noqa: E402
@@ -77,6 +81,8 @@ from analysis import get_model_predictions  # noqa: E402
 from evaluate_scene import get_scenes_correctness, process_scene_gt  # noqa: E402
 
 PIPELINE = "LSTM"
+DEFAULT_SCALER_MANIFEST = os.path.join(
+    PROJECT_ROOT, "config", "mingling_distance_scalers.json")
 
 
 class _CachedCsvReader(object):
@@ -147,6 +153,16 @@ def parse_args():
         "--no-pair-files", dest="pair_files", action="store_false", default=True,
         help="do not write the per-pair <train>@<test>.csv files; the cells CSV "
              "is then the only per-cell output.")
+    parser.add_argument(
+        "--distance-scalers", default=DEFAULT_SCALER_MANIFEST,
+        help="per-camera distance scaler manifest, from "
+             "scripts/compute_distance_scalers.py (default: %(default)s).")
+    parser.add_argument(
+        "--no-distance-rescale", dest="distance_rescale", action="store_false",
+        default=True,
+        help="feed each model the evaluation camera's own distance "
+             "normalisation instead of converting to the training camera's "
+             "scale. Reproduces the uncorrected numbers; not a fair comparison.")
     return parser.parse_args()
 
 
@@ -267,11 +283,43 @@ def score_one_cell(checkpoint, device, test_set, scene_group_idx_dict,
     return metrics, len(scene_seq_mat_dict)
 
 
-def write_pair_file(exp_id, train_camera, test_camera, rows):
+def write_pair_file(exp_id, train_camera, test_camera, rows, distance_scaling):
     """One cell's folds as <experiment>/evaluations/<train>@<test>.csv."""
     path = str(graphff_paths.evaluation_pair_file(train_camera, test_camera, exp_id))
-    matrix_cells.write_pair_file(path, train_camera, test_camera, rows)
+    matrix_cells.write_pair_file(path, train_camera, test_camera, rows,
+                                 distance_scaling=distance_scaling)
     return path
+
+
+def load_scalers(args, cameras):
+    """Scaler per camera, resolved up front so a bad manifest fails immediately.
+
+    Every camera in the run needs one: it is the source scale when its model is
+    evaluated and the target scale when its data is.
+    """
+    if not args.distance_rescale:
+        return None
+    manifest = distance_scalers.load_manifest(args.distance_scalers)
+    return dict(
+        (camera, distance_scalers.get_scaler(
+            manifest, camera_registry.dataset_of(camera),
+            args.frame_stride, args.seq_len))
+        for camera in cameras)
+
+
+def scaling_record(scalers, train_camera, eval_camera):
+    """The provenance recorded for one cell, before anything is applied."""
+    if scalers is None:
+        return {"mode": distance_scalers.MODE_DISABLED}
+    source, target = scalers[train_camera], scalers[eval_camera]
+    return {
+        "mode": (distance_scalers.MODE_SAME_CAMERA if train_camera == eval_camera
+                 else distance_scalers.MODE_RESCALED),
+        "source_min": source["min_distance"],
+        "source_max": source["max_distance"],
+        "target_min": target["min_distance"],
+        "target_max": target["max_distance"],
+    }
 
 
 def main():
@@ -297,6 +345,8 @@ def main():
     else:
         device = torch.device(args.device)
 
+    scalers = load_scalers(args, sorted(set(eval_cameras) | set(train_cameras)))
+
     experiment_root = graphff_paths.get_experiment_root()
     evaluations_dir = str(graphff_paths.evaluations_dir(args.exp_id))
     results_root = (args.results_root if args.results_root
@@ -321,6 +371,16 @@ def main():
     print("device          : " + str(device))
     print("rebuild data    : " + str(args.rebuild_data))
     print("pair files      : " + str(args.pair_files))
+    if scalers is None:
+        print("distance rescale: DISABLED -- every model reads the evaluation "
+              "camera's own distance scale")
+    else:
+        print("distance rescale: on, from " + args.distance_scalers)
+        for camera in camera_registry.CAMERA_ORDER:
+            if camera in scalers:
+                print("                  %s [%.6g, %.6g]"
+                      % (camera, scalers[camera]["min_distance"],
+                         scalers[camera]["max_distance"]))
     print("")
 
     # one parse of GT.csv per camera instead of one per call
@@ -376,6 +436,14 @@ def main():
                 print("fold {}: {} test samples, {} scenes".format(
                     fold, test_set.size, len(scene_group_idx_dict)))
 
+                # the rescale writes into the tensor, and the five training
+                # cameras share it, so keep the camera's own normalisation to
+                # restore from before each cell
+                pristine_distance = None
+                if scalers is not None:
+                    pristine_distance = test_set.data[
+                        :, :, distance_scalers.DISTANCE_INDEX, :].clone()
+
                 for train_camera in train_cameras:
                     checkpoint, candidates = find_checkpoint(
                         args.exp_id, train_camera, fold,
@@ -393,8 +461,18 @@ def main():
                             error="no checkpoint at " + " or ".join(candidates)))
                         continue
 
+                    scaling = scaling_record(scalers, train_camera, eval_camera)
                     started = time.time()
                     try:
+                        if scalers is not None:
+                            # undo the previous cell, then put this fold's
+                            # distances on this model's scale
+                            test_set.data[:, :, distance_scalers.DISTANCE_INDEX, :] = \
+                                pristine_distance
+                            if train_camera != eval_camera:
+                                distance_scalers.rescale_to_source(
+                                    test_set.data, scalers[train_camera],
+                                    scalers[eval_camera])
                         metrics, n_scenes = score_one_cell(
                             checkpoint, device, test_set, scene_group_idx_dict,
                             gt_groups_at_time, args.seq_len, num_nodes)
@@ -406,7 +484,7 @@ def main():
                         cells.write(matrix_cells.new_row(
                             PIPELINE, args.exp_id, train_camera, eval_camera, fold,
                             matrix_cells.STATUS_ERROR, checkpoint=checkpoint,
-                            seconds=time.time() - started,
+                            seconds=time.time() - started, scaling=scaling,
                             error="{}: {}".format(type(exc).__name__, exc)))
                         continue
 
@@ -417,12 +495,13 @@ def main():
                         PIPELINE, args.exp_id, train_camera, eval_camera, fold,
                         matrix_cells.STATUS_OK, checkpoint=checkpoint,
                         metrics=metrics, n_eval_samples=test_set.size,
-                        n_scenes=n_scenes, seconds=time.time() - started))
+                        n_scenes=n_scenes, seconds=time.time() - started,
+                        scaling=scaling))
 
                     pair_rows.setdefault(train_camera, []).append((fold, metrics))
                     if args.pair_files:
                         write_pair_file(args.exp_id, train_camera, eval_camera,
-                                        pair_rows[train_camera])
+                                        pair_rows[train_camera], scaling["mode"])
 
         print("wrote " + cells_path + " (" + str(cells.count) + " cells)")
         written.append(cells_path)

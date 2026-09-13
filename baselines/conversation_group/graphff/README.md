@@ -93,6 +93,16 @@ scene_continuity.csv
 dataset_info.json
 ```
 
+Those files ship with the data deposit and do not need regenerating, but the code
+that produced them is kept in `dataset/`:
+[generate_mingling_gt.py](dataset/generate_mingling_gt.py) turns the ViTPose
+pickles into one dataset per `camXX_batchYY`, and
+[build_camera_level_mingling.py](dataset/build_camera_level_mingling.py)
+concatenates a camera's batches in chronological order, marking the batch
+boundaries in `scene_continuity.csv` so an LSTM window can never span two
+batches. `DANTE-master/datasets/prepare_mingling.py` is the DANTE-side
+equivalent.
+
 Each DANTE camera directory contains generated DANTE artifacts:
 
 ```text
@@ -505,6 +515,56 @@ time, and the two cross-session blocks are unseen people as well.
 Nothing is recomputed from the training output: the numbers come from scoring the
 restored best-validation checkpoints, using each pipeline's own metric code.
 
+### Distance scale (LSTM only, required)
+
+`data.get_mingling_data_fast` normalises the distance feature by each camera's
+own global min/max, taken over the whole camera before the fold split. The five
+cameras disagree on that scale by up to 9x — the maximum distance runs from 5.3
+(cam10) to 48.0 (cam06), since one far-away detection sets it:
+
+```text
+cam06 48.01   cam01 40.04   cam08 21.62   cam03 7.51   cam10 5.30
+```
+
+A frozen cam06 model handed a cam10 tensor therefore reads every pair as ~9x
+further apart than it is, predicts that nobody is grouped, and scores near zero.
+That measures the normalisation, not the model's ability to transfer. So each
+off-diagonal cell first converts the evaluation camera's distance channel back to
+metres and re-normalises it with the **training** camera's min/max. The
+conversion is the identity on the diagonal, and touches only visible entries —
+padded neighbours keep their `-999`.
+
+Build the manifest once. It reads only `features.csv` (the `ID*`/`X*`/`Y*`
+columns) and `scene_continuity.csv` per camera — no cached tensors, no
+checkpoints, no GPU — so it runs anywhere the data is:
+
+```bash
+python scripts/compute_distance_scalers.py                      # $GRAPHFF_DATA_ROOT
+python scripts/compute_distance_scalers.py --data-root ../../../data   # a local copy
+python scripts/compute_distance_scalers.py --verify-against \
+  config/mingling_existing_weight_distance_scalers.json
+```
+
+The result goes to `config/mingling_distance_scalers.json`, which is what the
+evaluator reads. It has to sit in the checkout the jobs run from, so a manifest
+built locally must be copied to the cluster — it is about 1 KB.
+
+`--verify-against` compares min, max, frame count, window count and value count
+per camera against another manifest.
+`config/mingling_existing_weight_distance_scalers.json` is the one shipped with
+the original cross-transfer code, kept as the fingerprint of the released
+weights: all five cameras matching means this data is the data those weights were
+trained on, and the numbers are comparable with the published ones.
+
+The evaluator refuses to run without a manifest; `DISTANCE_RESCALE=0` evaluates
+without it and reproduces the uncorrected numbers, which are not comparable
+across cameras. Every cell records which of the three it was in the
+`distance_scaling` column, along with both scalers used.
+
+DANTE needs none of this: `reformat_data` shifts and centres each pair's
+coordinates and never normalises over a whole camera, so its cells are marked
+`not_applicable`.
+
 ### Running it
 
 ```bash
@@ -598,6 +658,11 @@ dominant_sets.py                             Dominant set clustering
 scripts/evaluate_matrix_lstm.py              LSTM cross-camera evaluation
 scripts/evaluate_matrix_dante.py             DANTE cross-camera evaluation
 scripts/build_matrix_report.py               Cells -> matrix tables and results file
+scripts/compute_distance_scalers.py          Per-camera distance scaler manifest
+scripts/distance_scalers.py                  Target scale -> frozen source scale
+scripts/test_distance_scalers.py             Unit tests for the rescale
+dataset/generate_mingling_gt.py              ViTPose pickles -> per-batch LSTM CSVs
+dataset/build_camera_level_mingling.py       Per-batch CSVs -> per-camera datasets
 scripts/camera_matrix.py                     Cells -> 5x5 mean/std tables
 scripts/camera_registry.py                   Camera list and sessions, stdlib only
 scripts/matrix_cells.py                      Per-cell record schema, stdlib only

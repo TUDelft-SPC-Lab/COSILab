@@ -47,6 +47,14 @@ CELL_FIELDS = (
 ) + METRIC_FIELDS + (
     "n_eval_samples",
     "n_scenes",
+    # how the evaluation camera's distance feature was put on the model's scale;
+    # see scripts/distance_scalers.py. 'not_applicable' for pipelines that do not
+    # normalise distance globally, such as DANTE.
+    "distance_scaling",
+    "source_distance_min",
+    "source_distance_max",
+    "target_distance_min",
+    "target_distance_max",
     "checkpoint",
     "seconds",
     "error",
@@ -55,9 +63,17 @@ CELL_FIELDS = (
 
 def new_row(pipeline, run_id, train_camera, test_camera, fold, status,
             checkpoint="", metrics=None, n_eval_samples="", n_scenes="",
-            seconds="", error=""):
+            seconds="", error="", scaling=None):
     """One cell record, with every field present so the CSV stays rectangular."""
     row = dict.fromkeys(CELL_FIELDS, "")
+    if scaling:
+        row["distance_scaling"] = scaling.get("mode", "")
+        for field, key in (("source_distance_min", "source_min"),
+                           ("source_distance_max", "source_max"),
+                           ("target_distance_min", "target_min"),
+                           ("target_distance_max", "target_max")):
+            if scaling.get(key) is not None:
+                row[field] = scaling[key]
     row.update({
         "pipeline": pipeline,
         "run_id": run_id,
@@ -113,10 +129,11 @@ class CellWriter(object):
         return False
 
 
-PAIR_FIELDS = ("train_camera", "test_camera", "fold", "split") + METRIC_FIELDS
+PAIR_FIELDS = (("train_camera", "test_camera", "fold", "split")
+               + METRIC_FIELDS + ("distance_scaling",))
 
 
-def write_pair_file(path, train_camera, test_camera, rows):
+def write_pair_file(path, train_camera, test_camera, rows, distance_scaling=""):
     """One (training camera, evaluation camera) pair: ``cam01@cam03.csv``.
 
     ``rows`` is [(fold, metrics), ...] in fold order, so the whole file is one
@@ -130,4 +147,5 @@ def write_pair_file(path, train_camera, test_camera, rows):
         for fold, metrics in rows:
             writer.writerow(
                 (train_camera, test_camera, fold, "test")
-                + tuple(metrics[name] for name in METRIC_FIELDS))
+                + tuple(metrics[name] for name in METRIC_FIELDS)
+                + (distance_scaling,))

@@ -1,0 +1,52 @@
+{
+  "datasets": {
+    "mingling1/cam06": {
+      "frame_stride": 20,
+      "max_distance": 48.00742657821582,
+      "min_distance": 0.0030768618316719173,
+      "num_distance_values": 1046872,
+      "num_frames_after_stride": 5592,
+      "num_valid_windows": 71277,
+      "seq_len": 10
+    },
+    "mingling1/cam08": {
+      "frame_stride": 20,
+      "max_distance": 21.620311425563315,
+      "min_distance": 0.0069505353681921745,
+      "num_distance_values": 1686780,
+      "num_frames_after_stride": 4302,
+      "num_valid_windows": 75705,
+      "seq_len": 10
+    },
+    "mingling1/cam10": {
+      "frame_stride": 20,
+      "max_distance": 5.2966069463709085,
+      "min_distance": 0.000757975710566728,
+      "num_distance_values": 1052506,
+      "num_frames_after_stride": 5592,
+      "num_valid_windows": 71198,
+      "seq_len": 10
+    },
+    "mingling2/cam01": {
+      "frame_stride": 20,
+      "max_distance": 40.044945007718134,
+      "min_distance": 0.019283903738106383,
+      "num_distance_values": 678314,
+      "num_frames_after_stride": 5694,
+      "num_valid_windows": 58106,
+      "seq_len": 10
+    },
+    "mingling2/cam03": {
+      "frame_stride": 20,
+      "max_distance": 7.508755888680849,
+      "min_distance": 0.00026339091436754545,
+      "num_distance_values": 1999980,
+      "num_frames_after_stride": 4101,
+      "num_valid_windows": 78111,
+      "seq_len": 10
+    }
+  },
+  "description": "Full-camera min/max distance scalers matching the normalisation in data.get_mingling_data_fast. A frozen model must receive target-camera distances converted to its own source scale.",
+  "normalization_scope": "full_camera_pre_split",
+  "version": 1
+}

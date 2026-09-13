@@ -30,6 +30,10 @@
 #   USE_GPU=0                 1 requests a GPU and runs inference on it
 #   REBUILD_DATA=0            1 rebuilds split tensors instead of using _cache
 #   PAIR_FILES=1              0 skips the evaluations/<train>@<test>.csv files
+#   DISTANCE_RESCALE=1        0 evaluates without converting the evaluation
+#                             camera's distance scale to the model's own; the
+#                             numbers are then not comparable across cameras
+#   DISTANCE_SCALERS=...      manifest from scripts/compute_distance_scalers.py
 #   NO_REPORT=0               1 submits only the evaluation array
 #   REPORT_ONLY=0             1 submits only the report (no evaluation)
 #   DRY_RUN=0                 1 prints the sbatch lines without submitting
@@ -61,6 +65,8 @@ RUN_ID="${RUN_ID:-1}"
 USE_GPU="${USE_GPU:-0}"
 REBUILD_DATA="${REBUILD_DATA:-0}"
 PAIR_FILES="${PAIR_FILES:-1}"
+DISTANCE_RESCALE="${DISTANCE_RESCALE:-1}"
+DISTANCE_SCALERS="${DISTANCE_SCALERS:-$PROJECT_ROOT/config/mingling_distance_scalers.json}"
 NO_REPORT="${NO_REPORT:-0}"
 REPORT_ONLY="${REPORT_ONLY:-0}"
 SEQ_LEN="${SEQ_LEN:-10}"
@@ -183,6 +189,16 @@ if [[ "$found" -eq 0 ]]; then
   exit 2
 fi
 
+# Without the manifest every off-diagonal cell reads the wrong distance scale and
+# collapses, so a missing one is refused here rather than discovered in the table.
+if [[ "$DISTANCE_RESCALE" == "1" && ! -f "$DISTANCE_SCALERS" ]]; then
+  echo "[ERROR] distance scaler manifest not found: $DISTANCE_SCALERS" >&2
+  echo "        Build it once (a few minutes, CPU only):" >&2
+  echo "          python scripts/compute_distance_scalers.py" >&2
+  echo "        or set DISTANCE_RESCALE=0 to evaluate without it." >&2
+  exit 2
+fi
+
 # Slurm rejects a job outright if the --output directory does not already exist.
 if [[ ! -d "$SLURM_LOG_DIR" ]]; then
   if mkdir -p "$SLURM_LOG_DIR" 2>/dev/null; then
@@ -204,6 +220,7 @@ echo "eval cameras:    $EVAL_CAM_ARG"
 echo "train cameras:   $TRAIN_CAM_ARG"
 echo "folds:           $FOLD_ARG"
 echo "gpu:             $USE_GPU"
+echo "distance scale:  $([[ "$DISTANCE_RESCALE" == "1" ]] && echo "$DISTANCE_SCALERS" || echo "<not rescaled>")"
 echo "checkpoints:     $found of 25 found"
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "[WARN] ${#missing[@]} checkpoints are missing: ${missing[*]}"
@@ -234,6 +251,7 @@ fi
 
 export_arg="ALL,RUN_ID=$RUN_ID,TRAIN_CAMS=$TRAIN_CAM_ARG,FOLDS=$FOLD_ARG"
 export_arg="$export_arg,USE_GPU=$USE_GPU,REBUILD_DATA=$REBUILD_DATA,PAIR_FILES=$PAIR_FILES"
+export_arg="$export_arg,DISTANCE_RESCALE=$DISTANCE_RESCALE,DISTANCE_SCALERS=$DISTANCE_SCALERS"
 export_arg="$export_arg,SEQ_LEN=$SEQ_LEN,FRAME_STRIDE=$FRAME_STRIDE"
 export_arg="$export_arg,GRAPHFF_DATA_ROOT=$GRAPHFF_DATA_ROOT,GRAPHFF_EXPERIMENT_ROOT=$GRAPHFF_EXPERIMENT_ROOT"
 if [[ -n "${EXTRA_EXPORTS:-}" ]]; then
@@ -306,7 +324,9 @@ else
   echo "results will appear in $EXPERIMENT_DIR/evaluations:"
   echo "  <train>@<test>.csv                       per-pair metrics, one row per fold"
   echo "  results/lstm_mingling_matrix_report.txt  tables, missing checkpoints, warnings"
-  echo "  results/lstm_mingling_matrix_f1_1.csv    one rendered 5x5 table per metric"
+  echo "  results/lstm_mingling_matrix_f1_1.csv    rendered 5x5 table, F1 at T=1"
+  echo "  results/lstm_mingling_matrix_f1_2_3.csv  rendered 5x5 table, F1 at T=2/3"
+  echo "  results/lstm_mingling_matrix_auc.csv     rendered 5x5 table, AUC"
   echo "  results/lstm_mingling_matrix_long.csv    tidy mean/std per cell"
   echo "  results/lstm_mingling_matrix_cells.csv   every cell, with its status"
 fi

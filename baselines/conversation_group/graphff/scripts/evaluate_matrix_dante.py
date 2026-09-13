@@ -77,6 +77,10 @@ from reformat_data import add_time, import_data  # noqa: E402
 
 PIPELINE = "DANTE"
 CHECKPOINT_NAME = "best_val_model.h5"
+# DANTE shifts and centres each pair's coordinates in reformat_data and never
+# min-max normalises distance over a whole camera, so it has no per-camera
+# distance scale to convert between -- unlike the LSTM pipeline, which does.
+DISTANCE_SCALING = "not_applicable"
 
 
 def parse_args():
@@ -163,7 +167,8 @@ def check_input_shape(model, max_people, d):
 def write_pair_file(exp_id, train_camera, test_camera, rows):
     """One cell's folds as <experiment>/evaluations/<train>@<test>.csv."""
     path = str(dante_paths.evaluation_pair_file(train_camera, test_camera, exp_id))
-    matrix_cells.write_pair_file(path, train_camera, test_camera, rows)
+    matrix_cells.write_pair_file(path, train_camera, test_camera, rows,
+                                 distance_scaling=DISTANCE_SCALING)
     return path
 
 
@@ -289,7 +294,8 @@ def main():
                         PIPELINE, args.exp_id, train_camera, eval_camera, fold,
                         matrix_cells.STATUS_OK, checkpoint=checkpoint,
                         metrics=metrics, n_eval_samples=n_pairs,
-                        n_scenes=n_frames, seconds=time.time() - started))
+                        n_scenes=n_frames, seconds=time.time() - started,
+                        scaling={"mode": DISTANCE_SCALING}))
 
                     pair_rows.setdefault(train_camera, []).append((fold, metrics))
                     if args.pair_files:

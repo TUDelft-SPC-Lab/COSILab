@@ -291,7 +291,9 @@ else
   echo "results will appear in $EXPERIMENT_DIR/evaluations:"
   echo "  <train>@<test>.csv                        per-pair metrics, one row per fold"
   echo "  results/dante_mingling_matrix_report.txt  tables, missing checkpoints, warnings"
-  echo "  results/dante_mingling_matrix_f1_1.csv    one rendered 5x5 table per metric"
+  echo "  results/dante_mingling_matrix_f1_1.csv    rendered 5x5 table, F1 at T=1"
+  echo "  results/dante_mingling_matrix_f1_2_3.csv  rendered 5x5 table, F1 at T=2/3"
+  echo "  results/dante_mingling_matrix_auc.csv     rendered 5x5 table, AUC"
   echo "  results/dante_mingling_matrix_long.csv    tidy mean/std per cell"
   echo "  results/dante_mingling_matrix_cells.csv   every cell, with its status"
 fi

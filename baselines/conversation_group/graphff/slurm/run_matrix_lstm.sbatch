@@ -41,6 +41,11 @@
 #   USE_GPU=0                # 1 runs inference on a GPU
 #   REBUILD_DATA=0           # 1 rebuilds split tensors instead of using _cache
 #   PAIR_FILES=1             # 0 skips the evaluations/<train>@<test>.csv files
+#   DISTANCE_RESCALE=1       # 0 feeds each model the evaluation camera's own
+#                            # distance scale; reproduces the uncorrected numbers
+#   DISTANCE_SCALERS=$PROJECT_ROOT/config/mingling_distance_scalers.json
+#                            # from scripts/compute_distance_scalers.py; must sit
+#                            # under a bound directory, PROJECT_ROOT by default
 #   GRAPHFF_DATA_ROOT=/path/to/LSTM
 #   GRAPHFF_EXPERIMENT_ROOT=/path/to/experiments
 #   SEQ_LEN=10  FRAME_STRIDE=20
@@ -69,6 +74,8 @@ FOLDS="${FOLDS:-all}"
 USE_GPU="${USE_GPU:-0}"
 REBUILD_DATA="${REBUILD_DATA:-0}"
 PAIR_FILES="${PAIR_FILES:-1}"
+DISTANCE_RESCALE="${DISTANCE_RESCALE:-1}"
+DISTANCE_SCALERS="${DISTANCE_SCALERS:-$PROJECT_ROOT/config/mingling_distance_scalers.json}"
 SEQ_LEN="${SEQ_LEN:-10}"
 FRAME_STRIDE="${FRAME_STRIDE:-20}"
 GRAPHFF_DATA_ROOT="${GRAPHFF_DATA_ROOT:-/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_2/baselines/LSTM}"
@@ -181,6 +188,17 @@ TASK_LOG="$TASK_LOG_DIR/matrix_eval_cam${EVAL_CAM}.log"
   echo "        There is nothing to evaluate; train it first or pass another RUN_ID." >&2
   exit 2
 }
+if [[ "$DISTANCE_RESCALE" == "1" ]]; then
+  [[ -f "$DISTANCE_SCALERS" ]] || {
+    echo "[ERROR] distance scaler manifest not found: $DISTANCE_SCALERS" >&2
+    echo "        Build it once with scripts/compute_distance_scalers.py, or set" >&2
+    echo "        DISTANCE_RESCALE=0 to evaluate without it (uncorrected numbers)." >&2
+    exit 2
+  }
+elif [[ "$DISTANCE_RESCALE" != "0" ]]; then
+  echo "[ERROR] DISTANCE_RESCALE must be 0 or 1, got: $DISTANCE_RESCALE" >&2
+  exit 2
+fi
 
 mkdir -p "$TASK_LOG_DIR"
 : > "$TASK_LOG"
@@ -201,6 +219,8 @@ echo "task_log=$TASK_LOG"
 echo "use_gpu=$USE_GPU"
 echo "rebuild_data=$REBUILD_DATA"
 echo "pair_files=$PAIR_FILES"
+echo "distance_rescale=$DISTANCE_RESCALE"
+echo "distance_scalers=$DISTANCE_SCALERS"
 echo "seq_len=$SEQ_LEN"
 echo "frame_stride=$FRAME_STRIDE"
 echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
@@ -217,6 +237,8 @@ apptainer_env_args=(
   --env USE_GPU="$USE_GPU"
   --env REBUILD_DATA="$REBUILD_DATA"
   --env PAIR_FILES="$PAIR_FILES"
+  --env DISTANCE_RESCALE="$DISTANCE_RESCALE"
+  --env DISTANCE_SCALERS="$DISTANCE_SCALERS"
   --env SEQ_LEN="$SEQ_LEN"
   --env FRAME_STRIDE="$FRAME_STRIDE"
   --env GRAPHFF_DATA_ROOT="$GRAPHFF_DATA_ROOT"
@@ -291,6 +313,11 @@ PY
     fi
     if [[ "$PAIR_FILES" == "0" ]]; then
       args+=(--no-pair-files)
+    fi
+    if [[ "$DISTANCE_RESCALE" == "1" ]]; then
+      args+=(--distance-scalers "$DISTANCE_SCALERS")
+    else
+      args+=(--no-distance-rescale)
     fi
     "${PYBIN}" scripts/evaluate_matrix_lstm.py "${args[@]}"
   ' 2>&1 | tee -a "$TASK_LOG"
