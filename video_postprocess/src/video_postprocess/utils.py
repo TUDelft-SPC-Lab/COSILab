@@ -18,10 +18,13 @@ def get_num_threads(max_threads: int | None = None) -> int:
     if max_threads is not None:
         return max_threads
 
-    # See https://doc.daic.tudelft.nl/support/faqs/job-resources/#how-do-i-request-cpus-for-a-multithreaded-program
-    # for why os.sched_getaffinity(0) is used and not os.cpu_count()
-    # allocated_threads = len(os.sched_getaffinity(0)) - 1
-    allocated_threads = 0  # on windows, os.sched_getaffinity(0) is not supported
+    if hasattr(os, "sched_getaffinity"):
+        # See https://doc.daic.tudelft.nl/support/faqs/job-resources/#how-do-i-request-cpus-for-a-multithreaded-program
+        # for why os.sched_getaffinity(0) is used and not os.cpu_count()
+        allocated_threads = len(os.sched_getaffinity(0)) - 1
+    else:
+        # Fallback to cpu_count on Windows
+        allocated_threads = psutil.cpu_count() - 1
     print(f"num allocated_threads is {allocated_threads}")
     return allocated_threads
 
