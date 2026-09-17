@@ -218,7 +218,7 @@ Every segment in a run is written to the same `--target-directory`, and each cam
 Use:
 
 ```text
-split_video_into_frames.py
+extract_frames_from_video.py
 ```
 
 Like segment cutting, this works directly on raw per-camera video chunks:
@@ -234,7 +234,7 @@ raw_videos/
 Run:
 
 ```bash
-uv run python split_video_into_frames.py \
+uv run python extract_frames_from_video.py \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/frames \
   --start-time 13:45:00 \
@@ -259,7 +259,7 @@ frames/
 To sample instead of extracting every frame, pass `--every-n-frames`:
 
 ```bash
-uv run python split_video_into_frames.py \
+uv run python extract_frames_from_video.py \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/frames \
   --every-n-frames 10
@@ -316,7 +316,7 @@ HH:MM:SS:FF,        HH:MM:SS:FF,     HH:MM:SS.ssssss
 - `world_timecode` is the inverse correction: the nominal (60 fps, drift-uncorrected) timecode that would need to be passed as `extract_segment_from_video.py`'s `--start-time --use-timecode` to seek to this same frame, undoing the same cross-file `physical_frames_before` correction `video_segments.py` applies when locating frames.
 - `world_timestamp` is the same instant as `world_timecode`, with its `:FF` frame field converted to 6 fractional digits of seconds (1 µs resolution) instead.
 
-Both columns correct for a camera's true framerate (e.g. 59.94 fps) against the nominal 60 fps clock the `:FF` field counts against — the per-frame version of the same correction `extract_segment_from_video.py` and `split_video_into_frames.py` apply per-segment via `physical_frames_before`, so results stay consistent with those scripts across multi-file recordings.
+Both columns correct for a camera's true framerate (e.g. 59.94 fps) against the nominal 60 fps clock the `:FF` field counts against — the per-frame version of the same correction `extract_segment_from_video.py` and `extract_frames_from_video.py` apply per-segment via `physical_frames_before`, so results stay consistent with those scripts across multi-file recordings.
 
 `CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
 
@@ -564,7 +564,7 @@ video_postprocess/
   __init__.py
   concat_videos.py
   extract_segment_from_video.py
-  split_video_into_frames.py
+  extract_frames_from_video.py
   generate_timestamps_csv.py
   video_segments.py
   timecode.py

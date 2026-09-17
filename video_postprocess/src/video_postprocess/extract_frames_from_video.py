@@ -7,7 +7,7 @@ import click
 from ffmpeg import FFmpeg, Progress
 from tqdm import tqdm
 
-from video_postprocess.utils import get_camera_to_process, get_num_threads
+from video_postprocess.utils import get_camera_to_process
 from video_postprocess.video_segments import (
     VideoFileInfo,
     collect_camera_video_infos,
@@ -94,14 +94,13 @@ def extract_frames_from_file(
     return frame_count
 
 
-def split_camera_into_frames(
+def extract_camera_frames(
     camera_directory: Path,
     target_directory: Path,
     start_time: str | None,
     end_time: str | None,
     use_timecode: bool,
     every_n_frames: int | None,
-    num_threads: int,
 ) -> None:
     infos = collect_camera_video_infos(camera_directory)
     if not infos:
@@ -121,7 +120,10 @@ def split_camera_into_frames(
     # phase_offset carries the every_n_frames stride's phase across file boundaries: it's the
     # number of (pre-sampling) frames already consumed by earlier segments of this camera, mod
     # every_n_frames, so the sampling grid stays anchored to the start of the whole requested
-    # range instead of restarting at 0 for each file.
+    # range instead of restarting at 0 for each file. Extracting each file directly with ffmpeg's
+    # `select` filter (rather than concatenating precisely-cut segments first, as
+    # extract_segment_from_video.py does for mp4 output) sidesteps `-f concat` occasionally
+    # muxing in an extra frame at a join.
     segments: list[tuple[VideoFileInfo, int, int, int]] = []
     raw_offset = 0
     for file_index in range(start.file_index, end.file_index + 1):
@@ -140,7 +142,7 @@ def split_camera_into_frames(
     )
 
     with tqdm(
-        desc="Splitting", unit="Frame", leave=False, total=total_frames
+        desc=f"Extracting frames ({camera_directory.name})", unit="Frame", leave=False, total=total_frames
     ) as pbar:
         frame_counter = 0
         for info, segment_start, segment_end, phase_offset in segments:
@@ -153,12 +155,14 @@ def split_camera_into_frames(
                 start_number=frame_counter,
                 every_n_frames=every_n_frames,
                 phase_offset=phase_offset,
-                num_threads=num_threads,
+                num_threads=0,  # let ffmpeg pick the thread count automatically
                 pbar=pbar,
             )
 
+    print(f"Wrote {frame_counter} frames to '{camera_target_directory}' for camera '{camera_directory.name}'.")
 
-def split_video_into_frames(
+
+def extract_frames_from_video(
     source_directory: Path,
     target_directory: Path,
     start_time: str | None = None,
@@ -176,40 +180,30 @@ def split_video_into_frames(
         if camera_dir.is_dir() and (camera_to_process is None or camera_dir.name == camera_to_process)
     ]
 
-    num_threads = get_num_threads()
-
-    for camera_directory in tqdm(
-        camera_directories, desc="Video to frames", unit="Camera"
-    ):
-        split_camera_into_frames(
+    for camera_directory in tqdm(camera_directories, desc="Extracting frames", unit="Camera"):
+        extract_camera_frames(
             camera_directory=camera_directory,
             target_directory=target_directory,
             start_time=start_time,
             end_time=end_time,
             use_timecode=use_timecode,
             every_n_frames=every_n_frames,
-            num_threads=num_threads,
         )
 
 
 @click.command()
 @click.option(
     "--source-directory",
-    type=click.Path(
-        file_okay=False, dir_okay=True, writable=False, path_type=Path
-    ),
+    type=click.Path(file_okay=False, dir_okay=True, writable=False, path_type=Path),
     help=(
-        "Directory that contains one subdirectory per camera, each holding "
-        "that camera's video file(s). This is expected to be a "
-        "raw_sensor_data/gopro_data/<mingle folder>"
+        "Directory that contains all input data files. This is expected to "
+        "be a raw_sensor_data/gopro_data/<mingle folder>"
     ),
     required=True,
 )
 @click.option(
     "--target-directory",
-    type=click.Path(
-        file_okay=False, dir_okay=True, writable=True, path_type=Path
-    ),
+    type=click.Path(file_okay=False, dir_okay=True, writable=True, path_type=Path),
     help="Path to output directory",
     required=True,
 )
@@ -244,7 +238,7 @@ def main(
     use_timecode: bool,
     every_n_frames: int | None,
 ) -> None:
-    split_video_into_frames(
+    extract_frames_from_video(
         source_directory=source_directory,
         target_directory=target_directory,
         start_time=start_time,
