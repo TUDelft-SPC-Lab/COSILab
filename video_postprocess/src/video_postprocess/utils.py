@@ -4,6 +4,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TypeVar
 
+import psutil
+
 _EnumType = TypeVar("_EnumType", bound=Enum)
 
 
