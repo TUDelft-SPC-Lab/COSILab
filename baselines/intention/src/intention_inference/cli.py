@@ -31,6 +31,11 @@ from models.registry import available_backends, backend_capabilities, load_model
 from . import engine
 from .manifest import load_manifest_records
 from .modes.registry import available_modes, load_mode
+from .instruction_prompt import (
+    apply_to_prompt_config,
+    check as check_instruction_prompt,
+    load_instruction_prompt,
+)
 from .prompt import load_prompt_config
 from .records import RecordContext
 from .runs import NothingToDo, RunContext, select_run_plan
@@ -41,6 +46,15 @@ from .runs import NothingToDo, RunContext, select_run_plan
 DEFAULT_MODEL_CONFIG_PATH = Path(__file__).resolve().with_name("model_config.json")
 DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
     "/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/participant_imgs"
+)
+# The baseline wording every other instruction prompt is measured against. A
+# default rather than a required flag because the experiment varies this, so a
+# run that names nothing should ask the baseline rather than refuse. Doubled in
+# job_scripts/lib/intention_paths.sh as INTENTION_DEFAULT_INSTRUCTION_PROMPT, the
+# same way DEFAULT_PARTICIPANT_IMAGE_ROOT above is doubled there.
+DEFAULT_INSTRUCTION_PROMPT = Path(
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline"
+    "/prompt_structure_and_phrasing_variants/prompt_original_revised.txt"
 )
 
 
@@ -60,12 +74,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        required=True,
+        default="pa",
         choices=available_modes(),
         help=(
-            "Task mode: which variant of the question is asked, and what grounds it. "
-            "Required for the same reason as --backend -- it decides what was asked and "
-            "where the results are filed, so it should never be settled by omission."
+            "Task mode: how much of the group's audio is stacked, and what grounds the "
+            "question. Defaults to pa, which is the mode the instruction prompts in "
+            "prompt_structure_and_phrasing_variants are written for. Unlike --backend "
+            "this is defaulted rather than required, because the experiment varies the "
+            "wording and not the mode -- but it is still a path component, so a run "
+            "under another mode is still filed apart from these."
         ),
     )
     parser.add_argument(
@@ -88,6 +105,25 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Prompt config JSON. Defaults to the one the chosen --mode ships with.",
+    )
+    parser.add_argument(
+        "--instruction-prompt",
+        type=Path,
+        default=DEFAULT_INSTRUCTION_PROMPT,
+        help=(
+            "Text file holding the whole question this run asks. Its contents replace "
+            "'user_prompt_template' in every prompt config the run resolves -- the "
+            "mode's own, one passed with --prompt-config, and any a task spec carries "
+            f"per task. Default: {DEFAULT_INSTRUCTION_PROMPT}"
+        ),
+    )
+    parser.add_argument(
+        "--no-instruction-prompt",
+        action="store_true",
+        help=(
+            "Ask whatever the prompt config asks, ignoring --instruction-prompt and its "
+            "default. The way to run a mode the baseline prompt is not written for."
+        ),
     )
     parser.add_argument(
         "--model-config",
@@ -226,6 +262,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--trials",
+        type=int,
+        default=1,
+        help=(
+            "Generate this many answers per clip instead of one, from the same turn. "
+            "For measuring how much a model's answer varies at fixed inputs, so it is "
+            "only meaningful with sampling on -- under the default do_sample=false in "
+            "model_config.json every trial returns identical text."
+        ),
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Rerun runs whose output file already exists instead of skipping them.",
@@ -324,6 +371,8 @@ def main() -> None:
                 f"share to HOST_BIND_PATHS in job_scripts/intention/cosilab_daic.sh."
             )
 
+    if args.trials < 1:
+        raise ValueError(f"--trials must be at least 1: {args.trials}")
     if args.start_index < 0:
         raise ValueError(f"--start-index must be non-negative: {args.start_index}")
     if args.end_index is not None and args.end_index < args.start_index:
@@ -347,6 +396,9 @@ def main() -> None:
         if args.output is None
         else args.output
     ).expanduser().resolve()
+    instruction_prompt_path = (
+        None if args.no_instruction_prompt else resolve_optional_path(args.instruction_prompt)
+    )
     media_root = resolve_optional_path(args.media_root)
     local_path_prefix = resolve_optional_path(args.local_path_prefix)
     video_local_path_prefix = resolve_optional_path(args.video_local_path_prefix)
@@ -357,8 +409,25 @@ def main() -> None:
         raise FileNotFoundError(f"Input JSON not found: {input_json_path}")
     if not prompt_config_path.is_file():
         raise FileNotFoundError(f"Prompt config not found: {prompt_config_path}")
+    if instruction_prompt_path is not None and not instruction_prompt_path.is_file():
+        raise FileNotFoundError(f"Instruction prompt not found: {instruction_prompt_path}")
 
     prompt_config = load_prompt_config(prompt_config_path)
+    # Applied on top of whichever config was resolved, and carried on the run
+    # context so a task spec's own per-task configs get the same treatment. An
+    # instruction prompt that only reached the default config would be silently
+    # skipped by exactly the tasks that brought their own wording.
+    instruction_text: str | None = None
+    if instruction_prompt_path is not None:
+        instruction_text = load_instruction_prompt(instruction_prompt_path)
+        # Checked before the weights are paid for, and repeated here rather than
+        # only in the launcher because a job resubmitted by hand never sees that
+        # preflight. Raises when this mode could not honestly ask it.
+        check_instruction_prompt(
+            instruction_text, mode=mode.name, source=instruction_prompt_path
+        )
+        prompt_config = apply_to_prompt_config(prompt_config, instruction_text)
+
     # Handed over before any record is prepared: a mode that labels its own parts
     # keeps those templates in the prompt config, and needs them while building
     # turns as well as while rendering the prompt.
@@ -376,6 +445,11 @@ def main() -> None:
     print(f"[INFO] Run selector: {selector.name}")
     print(f"[INFO] Model config: {model_config_path}")
     print(f"[INFO] Prompt config: {prompt_config_path}")
+    print(
+        f"[INFO] Instruction prompt: "
+        f"{instruction_prompt_path or '<none; the prompt config supplies the template>'}"
+    )
+    print(f"[INFO] Trials per clip: {args.trials}")
     print(f"[INFO] Output: {output_path}")
     print(f"[INFO] Media path prefix: {args.media_path_prefix}")
     print(f"[INFO] Local path prefix: {local_path_prefix}")
@@ -396,6 +470,7 @@ def main() -> None:
         output_path=output_path,
         prompt_config_path=prompt_config_path,
         prompt_config=prompt_config,
+        instruction_text=instruction_text,
         system_prompt=system_prompt,
         persona_output_dir=(
             None

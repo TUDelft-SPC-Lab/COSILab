@@ -33,6 +33,20 @@
 #
 #   bash job_scripts/intention/persona.sh \
 #       --backend gemma --mode pa --task-spec /path/to/personas.json --submit
+#
+# --instruction-prompt swaps the question itself, holding the personas, the clips
+# and the model fixed. Every sweep has one -- prompt_original_revised.txt by
+# default -- and each is filed under its own subdirectory, so two never overwrite
+# each other and each resumes on its own. Stacked-audio mixes do not depend on the
+# wording, so point --audio-mix-dir at one cache to share it across them.
+#
+#   bash job_scripts/intention/persona.sh \
+#       --backend qwen7b --task-spec /path/to/personas.json --submit \
+#       --instruction-prompt /path/to/prompt_structural_variant_1.txt
+#
+# --trials N asks for N answers per clip instead of one, for measuring how much a
+# model varies at fixed inputs. It needs sampling on in the model config; under
+# the packaged do_sample=false every trial returns identical text.
 
 set -euo pipefail
 
@@ -45,7 +59,10 @@ SRC_DIR="${PACKAGE_ROOT}/src"
 job_script="${SCRIPT_DIR}/cosilab_daic.sh"
 
 backend=""
-mode=""
+# Defaulted to pa, unlike --backend: the experiment varies the wording, not
+# the mode, and the instruction prompts are written for pa. Still a path
+# component, so another mode is still filed apart from these.
+mode="pa"
 assignment_json=""
 task_spec=""
 persona_range=""
@@ -55,6 +72,15 @@ input_json="${INTENTION_INPUT_JSON}"
 persona_dir="${INTENTION_PERSONA_DIR}"
 persona_output_dir=""
 prompt_config=""
+# Empty means the packaged one. Named here rather than left to the worker's own
+# default because a sweep that needs sampling on brings its own -- see
+# intention_inference/build_sweep.py, which derives one beside its spec.
+model_config=""
+# What this sweep asks. Defaulted rather than empty: the wording is the thing
+# being varied, so a sweep naming none asks the baseline.
+instruction_prompt="${INTENTION_DEFAULT_INSTRUCTION_PROMPT}"
+no_instruction_prompt=0
+trials=""
 audio_mix_dir=""
 submit=0
 skip_complete=1
@@ -64,11 +90,11 @@ extra_args=()
 
 usage() {
     echo "Usage:" >&2
-    printf '  bash %s --backend NAME --mode NAME \\\n' "$0" >&2
+    printf '  bash %s --backend NAME \\\n' "$0" >&2
     echo "      (--assignment-json PATH | --task-spec PATH) [options]" >&2
     echo "Options:" >&2
     echo "  --backend NAME          Required. Known: $(intention_known_backends | tr '\n' ' ')" >&2
-    echo "  --mode NAME             Required. fa | sa | pa" >&2
+    echo "  --mode NAME             fa | sa | pa. Default: ${mode}" >&2
     echo "  --assignment-json PATH  Balanced persona-to-clip design" >&2
     echo "  --task-spec PATH        Externally provided persona task specification" >&2
     echo "  --answers-per-job N     Maximum persona x clip answers packed into one job" >&2
@@ -79,6 +105,15 @@ usage() {
     echo "  --persona-dir PATH      Assignment persona_XXXX.txt files. Default: ${persona_dir}" >&2
     echo "  --persona-output-dir P  Default: derived from backend, mode and source" >&2
     echo "  --prompt-config PATH    Default: the selected mode's prompt config" >&2
+    echo "  --model-config PATH     Weights and decoding. Default: the packaged one." >&2
+    echo "                          A sweep needing sampling on brings its own." >&2
+    echo "  --instruction-prompt P  The question this sweep asks, as a text file." >&2
+    echo "                          Results are filed under its own subdirectory, so" >&2
+    echo "                          two never overwrite each other. Default:" >&2
+    echo "                          ${instruction_prompt}" >&2
+    echo "  --no-instruction-prompt Ask the prompt config's own question instead" >&2
+    echo "  --trials N              Answers per clip. Default: 1. Needs sampling on" >&2
+    echo "                          in the model config to differ." >&2
     echo "  --audio-mix-dir PATH    Shared stacked-audio cache" >&2
     echo "  --submit                Queue jobs. Default: dry run" >&2
     echo "  --no-skip-complete      Include packs whose outputs already exist" >&2
@@ -105,6 +140,10 @@ while [[ $# -gt 0 ]]; do
         --persona-dir)        persona_dir="${2:?Missing value for --persona-dir}"; shift 2 ;;
         --persona-output-dir) persona_output_dir="${2:?Missing value for --persona-output-dir}"; shift 2 ;;
         --prompt-config)      prompt_config="${2:?Missing value for --prompt-config}"; shift 2 ;;
+        --model-config)       model_config="${2:?Missing value for --model-config}"; shift 2 ;;
+        --instruction-prompt) instruction_prompt="${2:?Missing value for --instruction-prompt}"; shift 2 ;;
+        --no-instruction-prompt) no_instruction_prompt=1; shift ;;
+        --trials)             trials="${2:?Missing value for --trials}"; shift 2 ;;
         --audio-mix-dir)      audio_mix_dir="${2:?Missing value for --audio-mix-dir}"; shift 2 ;;
         --job-script)         job_script="${2:?Missing value for --job-script}"; shift 2 ;;
         --max-jobs)           max_jobs="${2:?Missing value for --max-jobs}"; shift 2 ;;
@@ -135,9 +174,9 @@ if [[ -n "${SLURM_JOB_ID:-}" ]]; then
     echo "[ERROR] persona.sh is a login-node launcher; run it with bash, not sbatch." >&2
     exit 1
 fi
-if [[ -z "${backend}" || -z "${mode}" ]]; then
+if [[ -z "${backend}" ]]; then
     usage
-    echo "[ERROR] --backend and --mode are both required." >&2
+    echo "[ERROR] --backend is required." >&2
     exit 1
 fi
 if ! intention_backend_is_known "${backend}"; then
@@ -180,6 +219,43 @@ fi
 if [[ ! -f "${input_json}" ]]; then
     echo "[ERROR] Input JSON not found: ${input_json}" >&2
     exit 1
+fi
+
+if [[ -n "${model_config}" && ! -f "${model_config}" ]]; then
+    echo "[ERROR] Model config not found: ${model_config}" >&2
+    exit 1
+fi
+if [[ -n "${trials}" ]]; then
+    case "${trials}" in
+        ''|*[!0-9]*|0) echo "[ERROR] --trials must be a positive integer: ${trials}" >&2; exit 1 ;;
+    esac
+fi
+
+# --no-instruction-prompt wins over the default, but contradicts an explicit
+# --instruction-prompt: one says "ask this", the other "ask the config's own".
+if [[ "${no_instruction_prompt}" == "1" ]]; then
+    if [[ "${instruction_prompt}" != "${INTENTION_DEFAULT_INSTRUCTION_PROMPT}" ]]; then
+        echo "[ERROR] --no-instruction-prompt contradicts --instruction-prompt." >&2
+        echo "        Pass one of them." >&2
+        exit 1
+    fi
+    instruction_prompt=""
+fi
+if [[ -n "${instruction_prompt}" ]]; then
+    if [[ ! -f "${instruction_prompt}" ]]; then
+        echo "[ERROR] Instruction prompt not found: ${instruction_prompt}" >&2
+        echo "        Instruction prompts live under" >&2
+        echo "        ${INTENTION_INSTRUCTION_PROMPT_DIR}" >&2
+        echo "        Pass --no-instruction-prompt to ask the prompt config's own question." >&2
+        exit 1
+    fi
+    # Read through the same module the jobs will use. A prompt whose braces do
+    # not render, or that this mode could not honestly ask, is refused here
+    # rather than in N job logs after the queue has accepted them.
+    if ! PYTHONPATH="${SRC_DIR}" python3 -m intention_inference.instruction_prompt \
+        --instruction-prompt "${instruction_prompt}" --mode "${mode}" >/dev/null; then
+        exit 1
+    fi
 fi
 
 # Read and pack the source through the same schema modules inference uses.
@@ -277,6 +353,12 @@ if [[ -z "${persona_output_dir}" ]]; then
         persona_output_dir="$(intention_spec_output_dir \
             "${INTENTION_OUTPUT_DIR}" "${backend}" "${mode}" "${spec_stem%.json}")"
     fi
+    # A variant changes what was asked, so it changes where results are filed.
+    # Without this, a sweep under variant 1 writes persona_<id>.json over the one
+    # variant 0 produced -- and the resume check below would then skip the run it
+    # had just overwritten, so nothing would say so.
+    persona_output_dir="$(intention_instruction_output_dir \
+        "${persona_output_dir}" "${instruction_prompt}")"
 fi
 
 echo "[INFO] launcher           = ${BASH_SOURCE[0]}"
@@ -285,6 +367,8 @@ echo "[INFO] backend            = ${backend}"
 echo "[INFO] GPUs per job       = ${backend_gpu_count}"
 echo "[INFO] mode               = ${mode}"
 echo "[INFO] persona source     = ${source_kind}: ${source_path}"
+echo "[INFO] instruction prompt = ${instruction_prompt:-<none; the prompt config asks>}"
+echo "[INFO] trials per clip    = ${trials:-1}"
 echo "[INFO] selected runs      = ${total_runs}"
 echo "[INFO] total answers      = ${total_answers}"
 echo "[INFO] answers per job    = ${answers_per_job} (whole personas are never split)"
@@ -353,6 +437,10 @@ for (( chunk = 0; chunk < ${#chunk_selector_starts[@]}; chunk++ )); do
         --persona-output-dir "${persona_output_dir}"
     )
     [[ -n "${prompt_config}" ]] && sbatch_cmd+=(--prompt-config "${prompt_config}")
+    [[ -n "${model_config}" ]] && sbatch_cmd+=(--model-config "${model_config}")
+    [[ -n "${instruction_prompt}" ]] && sbatch_cmd+=(--instruction-prompt "${instruction_prompt}")
+    [[ -z "${instruction_prompt}" ]] && sbatch_cmd+=(--no-instruction-prompt)
+    [[ -n "${trials}" ]] && sbatch_cmd+=(--trials "${trials}")
     [[ -n "${audio_mix_dir}" ]] && sbatch_cmd+=(--audio-mix-dir "${audio_mix_dir}")
     (( ${#extra_args[@]} > 0 )) && sbatch_cmd+=("${extra_args[@]}")
 

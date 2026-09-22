@@ -91,11 +91,14 @@ fi
 # thing anyone asks of it, and it is also a path component, so letting it be
 # decided by omission is how a run ends up filed under a model nobody chose.
 backend=""
-# No default either, for the same reason: --mode is what was asked, and it is a
-# path component too. Unlike the backend, this script never needs to know which
-# modes exist -- it picks no image from it -- so the list of valid names lives
-# only in intention_inference/modes/registry.py and cli.py rejects a bad one.
-mode=""
+# Defaulted to pa rather than required, unlike --backend: the experiment varies
+# the wording and not the mode, and the instruction prompts under
+# prompt_structure_and_phrasing_variants are written for pa. It is still a path
+# component, so a run under another mode is still filed apart from these. This
+# script never needs to know which modes exist -- it picks no image from it --
+# so the list of valid names lives only in intention_inference/modes/registry.py
+# and cli.py rejects a bad one.
+mode="pa"
 # Empty means "the image the backend declares"; --sif-path overrides it for a
 # rebuilt image. There is no weights override: which weights run is
 # backends.<name>.model_id in the task's model_config.json.
@@ -111,6 +114,13 @@ participant_image_root="${INTENTION_PARTICIPANT_IMAGE_ROOT}"
 # after argument parsing because it follows PROJECT_ROOT.
 prompt_config=""
 model_config=""
+# What this run asks. Defaulted rather than empty: the wording is the thing the
+# experiment varies, so a run that names none asks the baseline rather than
+# whatever the mode's prompt config happens to hold. --no-instruction-prompt
+# clears it, which is how a mode the baseline is not written for is run.
+instruction_prompt="${INTENTION_DEFAULT_INSTRUCTION_PROMPT}"
+no_instruction_prompt=0
+trials=""
 no_audio=0
 limit=""
 index_range=""
@@ -136,7 +146,7 @@ usage() {
     echo "Options:" >&2
     echo "  --backend NAME                             Model to run the task on. Required." >&2
     echo "                                             Known: $(intention_known_backends | tr '\n' ' ')" >&2
-    echo "  --mode NAME                                Task mode: what is asked. Required." >&2
+    echo "  --mode NAME                                Task mode. Default: ${mode}" >&2
     echo "                                             pa (partially stacked audio), fa (flattened)," >&2
     echo "                                             sa (stacked, not implemented yet)." >&2
     echo "  --input-json PATH                          Default: ${input_json}" >&2
@@ -144,6 +154,11 @@ usage() {
     echo "  --output-dir PATH                          Default: ${output_dir}" >&2
     echo "                                             Results land in <output-dir>/<backend>/<mode>/" >&2
     echo "  --prompt-config PATH                       Default: the one the mode ships with" >&2
+    echo "  --instruction-prompt PATH                  The question this run asks, as a text file." >&2
+    echo "                                             Default: ${instruction_prompt}" >&2
+    echo "  --no-instruction-prompt                    Ask the prompt config's own question instead" >&2
+    echo "  --trials N                                 Answers per clip. Default: 1. Needs sampling" >&2
+    echo "                                             on in the model config to differ." >&2
     echo "  --model-config PATH                        Default: packaged model_config.json" >&2
     echo "                                             Weights, token budget, sampling and the" >&2
     echo "                                             frame policy live in that file, not here." >&2
@@ -182,6 +197,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         --prompt-config)
             prompt_config="${2:?Missing value for --prompt-config}"
+            shift 2
+            ;;
+        --instruction-prompt)
+            instruction_prompt="${2:?Missing value for --instruction-prompt}"
+            shift 2
+            ;;
+        --no-instruction-prompt)
+            no_instruction_prompt=1
+            shift
+            ;;
+        --trials)
+            trials="${2:?Missing value for --trials}"
             shift 2
             ;;
         --model-config)
@@ -319,12 +346,6 @@ if [[ -z "${backend}" ]]; then
     exit 1
 fi
 
-if [[ -z "${mode}" ]]; then
-    usage
-    echo "[ERROR] --mode is required." >&2
-    exit 1
-fi
-
 if ! intention_backend_is_known "${backend}"; then
     echo "[ERROR] Unknown backend: ${backend}" >&2
     echo "        Known: $(intention_known_backends | tr '\n' ' ')" >&2
@@ -341,6 +362,33 @@ if [[ -n "${limit}" ]]; then
             exit 1
             ;;
     esac
+fi
+
+if [[ -n "${trials}" ]]; then
+    case "${trials}" in
+        ''|*[!0-9]*|0)
+            echo "[ERROR] --trials must be a positive integer: ${trials}" >&2
+            exit 1
+            ;;
+    esac
+fi
+
+# --no-instruction-prompt wins over the default, but contradicts an explicit
+# --instruction-prompt: one says "ask this", the other "ask the config's own".
+if [[ "${no_instruction_prompt}" == "1" ]]; then
+    if [[ "${instruction_prompt}" != "${INTENTION_DEFAULT_INSTRUCTION_PROMPT}" ]]; then
+        echo "[ERROR] --no-instruction-prompt contradicts --instruction-prompt." >&2
+        echo "        Pass one of them." >&2
+        exit 1
+    fi
+    instruction_prompt=""
+fi
+if [[ -n "${instruction_prompt}" && ! -f "${instruction_prompt}" ]]; then
+    echo "[ERROR] Instruction prompt not found: ${instruction_prompt}" >&2
+    echo "        Instruction prompts live under" >&2
+    echo "        ${INTENTION_INSTRUCTION_PROMPT_DIR}" >&2
+    echo "        Pass --no-instruction-prompt to ask the prompt config's own question." >&2
+    exit 1
 fi
 
 if [[ -n "${index_range}" ]]; then
@@ -450,7 +498,11 @@ intention_set_local_prefixes "${DATA_ROOT}"
 VIDEO_LOCAL_PATH_PREFIX="${INTENTION_VIDEO_LOCAL_PATH_PREFIX}"
 AUDIO_LOCAL_PATH_PREFIX="${INTENTION_AUDIO_LOCAL_PATH_PREFIX}"
 
-run_output_dir="$(intention_output_dir "${output_dir}" "${backend}" "${mode}")"
+# A variant is another thing two runs can differ only in, so it is another path
+# component -- see intention_instruction_output_dir. Applied only where a path is
+# derived: one given with --output/--persona-output-dir was chosen deliberately.
+run_output_dir="$(intention_instruction_output_dir \
+    "$(intention_output_dir "${output_dir}" "${backend}" "${mode}")" "${instruction_prompt}")"
 
 # A persona run writes one file per persona or per task, so --output names
 # nothing it could use; the directory is what matters. A spec gets its own tree
@@ -463,6 +515,8 @@ if [[ -z "${persona_output_dir}" ]]; then
     else
         persona_output_dir="$(intention_persona_output_dir "${output_dir}" "${backend}" "${mode}")"
     fi
+    persona_output_dir="$(intention_instruction_output_dir \
+        "${persona_output_dir}" "${instruction_prompt}")"
 fi
 
 if [[ -z "${output_json}" ]]; then
@@ -501,6 +555,10 @@ container_path() {
 container_prompt_config=""
 if [[ -n "${prompt_config}" ]]; then
     container_prompt_config="$(container_path "${prompt_config}")"
+fi
+container_instruction_prompt=""
+if [[ -n "${instruction_prompt}" ]]; then
+    container_instruction_prompt="$(container_path "${instruction_prompt}")"
 fi
 container_model_config="$(container_path "${model_config}")"
 # Same rewrite: only a spec or persona dir under PROJECT_ROOT becomes a /workspace
@@ -597,6 +655,8 @@ echo "[INFO] model_config              = ${model_config}"
 echo "[INFO] container_model_config    = ${container_model_config}"
 echo "[INFO] prompt_config             = ${prompt_config:-<packaged with mode ${mode}>}"
 echo "[INFO] container_prompt_config   = ${container_prompt_config:-<not passed>}"
+echo "[INFO] instruction_prompt        = ${instruction_prompt:-<none; the prompt config asks>}"
+echo "[INFO] trials                    = ${trials:-1}"
 echo "[INFO] data_root                 = ${DATA_ROOT}"
 echo "[INFO] input_json                = ${input_json}"
 echo "[INFO] output_dir                = ${run_output_dir}"
@@ -638,6 +698,16 @@ python_args=(
 # accepted by argparse and then resolve to the working directory.
 if [[ -n "${container_prompt_config}" ]]; then
     python_args+=(--prompt-config "${container_prompt_config}")
+fi
+if [[ -n "${container_instruction_prompt}" ]]; then
+    python_args+=(--instruction-prompt "${container_instruction_prompt}")
+else
+    # Passed explicitly rather than omitted: cli.py defaults the
+    # instruction prompt, so silence would mean the baseline, not none.
+    python_args+=(--no-instruction-prompt)
+fi
+if [[ -n "${trials}" ]]; then
+    python_args+=(--trials "${trials}")
 fi
 if [[ "${no_audio}" == "1" ]]; then
     python_args+=(--no-audio)

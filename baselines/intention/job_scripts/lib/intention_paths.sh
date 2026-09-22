@@ -33,6 +33,17 @@ INTENTION_PERSONA_DIR="${INTENTION_PIPELINE_ROOT}/persona_prompts"
 INTENTION_ASSIGNMENT_JSON="${INTENTION_PIPELINE_ROOT}/ingroup_assignment.json"
 INTENTION_TASK_SPEC_JSON="${INTENTION_PIPELINE_ROOT}/personas_prolific_ids.json"
 
+# The prompt structure-and-phrasing experiment. An instruction prompt is one
+# whole user prompt as plain text, and it replaces whatever the prompt config
+# would have asked. Every run has one: prompt_original_revised.txt is the
+# baseline the structural variants in this directory are measured against, and
+# --instruction-prompt swaps in another.
+#
+# The variants themselves are prompt_structural_variant_<N>.txt in the same
+# directory, and are named on the command line by path like any other file.
+INTENTION_INSTRUCTION_PROMPT_DIR="${INTENTION_PIPELINE_ROOT}/prompt_structure_and_phrasing_variants"
+INTENTION_DEFAULT_INSTRUCTION_PROMPT="${INTENTION_INSTRUCTION_PROMPT_DIR}/prompt_original_revised.txt"
+
 # The HF cache is a write target, so it is here rather than inlined: a job that
 # cannot write it re-downloads weights it already has.
 INTENTION_HF_CACHE="/tudelft.net/staff-umbrella/neon/zonghuan/.cache/huggingface"
@@ -85,4 +96,25 @@ intention_persona_output_dir() {
 # among the design's own persona_NNNN.json would be indistinguishable from it.
 intention_spec_output_dir() {
     printf '%s\n' "$(intention_output_dir "$1" "$2" "$3")/spec_runs/$4"
+}
+
+# intention_instruction_output_dir <dir> <instruction prompt file, or empty>
+#
+# The instruction prompt changes what was asked, so it changes where results are
+# filed -- the same reason --mode is a path component. Without this, a sweep
+# under variant 1 writes persona_<id>.json straight over the one the baseline
+# produced, and the resume check then *skips* the run it just overwrote, so the
+# damage is silent.
+#
+# Empty second argument means --no-instruction-prompt, and the directory is
+# returned as-is: that run asked the prompt config's own question, which is what
+# the mode component already says.
+intention_instruction_output_dir() {
+    local dir="$1" instruction_file="$2" stem
+    if [[ -z "${instruction_file}" ]]; then
+        printf '%s\n' "${dir}"
+        return
+    fi
+    stem="$(basename "${instruction_file}")"
+    printf '%s\n' "${dir}/${stem%.txt}"
 }
