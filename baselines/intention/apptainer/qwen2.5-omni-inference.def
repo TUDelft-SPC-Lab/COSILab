@@ -12,19 +12,22 @@ From: nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
     vision SDPA path attends to the cu_seqlens chunks separately instead of
     materialising attention over the combined visual sequence.
 
-    Build a new image rather than overwriting the currently deployed one:
+    The deployed image is qwen2.5-omni-inference.sif, which is what
+    model_backends.sh points qwen3b and qwen7b at. Build a rebuild under a
+    scratch name rather than over the deployed file, and swap it in only once
+    the probe below passes:
 
-      apptainer build qwen2.5-omni-inference-tf4.54.sif \
+      apptainer build qwen2.5-omni-inference-new.sif \
         baselines/intention/apptainer/qwen2.5-omni-inference.def
 
     Check the installed stack:
 
-      apptainer exec --nv qwen2.5-omni-inference-tf4.54.sif python -V
+      apptainer exec --nv qwen2.5-omni-inference-new.sif python -V
 
-    Validate the memory curve on a GPU node before changing model_backends.sh:
+    Validate the memory curve on a GPU node before deploying it:
 
       sbatch baselines/intention/apptainer/probe_qwen25_vision_daic.sh \
-        --sif-path /path/to/qwen2.5-omni-inference-tf4.54.sif \
+        --sif-path /path/to/qwen2.5-omni-inference-new.sif \
         --backend qwen3b
 
     This image deliberately does not install external flash-attn. Qwen uses
