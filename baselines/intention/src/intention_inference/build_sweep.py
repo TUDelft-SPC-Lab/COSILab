@@ -7,7 +7,7 @@ the clips and the personas small and fixed, and varies the instruction prompt
 across the structural variants, repeating each cell enough times to see the
 spread:
 
-    5 clips  x  5 personas  x  6 instruction prompts  x  100 trials  =  15,000
+    5 clips  x  5 personas  x  6 instruction prompts  x  50 trials  =  7,500
 
 The first two dimensions live in the task spec this writes -- five tasks, one per
 persona, all five clips in each. The third is NOT in the spec: an instruction
@@ -16,9 +16,14 @@ submission files its results under that prompt's own directory. The fourth is
 ``--trials``, which the inference engine applies per clip.
 
 Everything is derived from ``--seed``, so rerunning with the same seed and the
-same manifest reproduces the spec byte for byte. The *answers* are not
-reproducible: sampling has no seed (see --trials in cli.py), which is the point
--- an unvarying trial would measure nothing.
+same manifest reproduces the spec byte for byte. That is what lets several models
+answer the same design: each model's submission rebuilds the spec, and an
+existing one is REUSED when the rebuild matches and REFUSED when it does not, so
+a manifest or persona pool that shifted between two models cannot quietly give
+the second one different clips. ``--rebuild`` is the deliberate override.
+
+The *answers* are not reproducible: sampling has no seed (see --trials in
+cli.py), which is the point -- an unvarying trial would measure nothing.
 
 Candidate clips are validated with the same checks inference uses, by importing
 ``build_assignment``'s ``collect_valid_clip_indices`` rather than repeating
@@ -35,15 +40,16 @@ every result summary.
 
 DO NOT RUN THIS DIRECTLY unless you pass all four --video-*/--audio-* prefix
 flags. A missing pair leaves the manifest's covfee URLs unrewritten, so every
-clip is reported unusable. Submit the job script instead, which fills the
-prefixes in from job_scripts/lib/intention_paths.sh -- the same file inference
-reads::
+clip is reported unusable. Run the job script instead, which fills the prefixes
+in from job_scripts/lib/intention_paths.sh -- the same file inference reads --
+and which also submits the sweep it builds::
 
-    bash job_scripts/intention/build_sweep_daic.sh
-    bash job_scripts/intention/build_sweep_daic.sh --seed 7
+    bash job_scripts/intention/build_sweep_daic.sh --model qwen7b
+    bash job_scripts/intention/build_sweep_daic.sh --model qwen7b --submit
 
-Submitting the sweep it produces is a separate step, deliberately: the spec is
-cheap to rebuild and inspect, and 15,000 answers are not.
+This script itself still only writes files: the spec, and the sampling model
+config beside it. Which model answers them, and where those answers are filed,
+is the job script's business.
 """
 
 from __future__ import annotations
@@ -52,7 +58,7 @@ import argparse
 import json
 import random
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +88,7 @@ DEFAULT_MODEL_CONFIG_PATH = Path(__file__).resolve().with_name("model_config.jso
 # flags one submission carried is a sweep nobody can reproduce from the repo.
 NUM_CLIPS = 5
 NUM_PERSONAS = 5
-NUM_TRIALS = 100
+NUM_TRIALS = 50
 # The six structural variants, by the numbers in their file names.
 INSTRUCTION_PROMPT_NUMBERS = (0, 1, 2, 3, 4, 5)
 INSTRUCTION_PROMPT_TEMPLATE = "prompt_structural_variant_{number}.txt"
@@ -90,7 +96,12 @@ INSTRUCTION_PROMPT_TEMPLATE = "prompt_structural_variant_{number}.txt"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build the clip x persona x instruction-prompt x trial sweep."
+        description="Build the clip x persona x instruction-prompt x trial sweep.",
+        epilog=(
+            "--describe SPEC is a mode of its own and takes no other argument: it "
+            "prints an existing spec's design as TSV, for the job script's "
+            "submission loop."
+        ),
     )
     parser.add_argument(
         "--mode",
@@ -124,8 +135,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--seed",
         type=int,
-        default=0,
+        default=1,
         help="Chooses the clips and the personas. Recorded in the spec's __meta__.",
+    )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help=(
+            "Overwrite an existing spec that the rebuild disagrees with. Without it "
+            "such a spec is refused, which is what keeps every model at one seed on "
+            "one design."
+        ),
     )
     parser.add_argument(
         "--trials",
@@ -174,6 +194,121 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     return parser.parse_args()
+
+
+def parse_describe_path(argv: Sequence[str]) -> Path:
+    """``--describe SPEC``, which is exclusive with every building argument.
+
+    Its own parser rather than a flag on the main one: describing reads a
+    finished spec and builds nothing, so a --seed or a --personas-json alongside
+    it would be silently ignored. Here they are an error instead.
+    """
+    parser = argparse.ArgumentParser(
+        prog="build_sweep --describe",
+        description="Print an existing sweep spec's design as TSV.",
+    )
+    parser.add_argument("--describe", type=Path, required=True, metavar="SPEC")
+    return parser.parse_args(list(argv)).describe
+
+
+def describe_spec(spec_path: Path) -> None:
+    """The spec's design, tab-separated for a Bash caller.
+
+    The same convention runs/planning.py already feeds the launcher with, and for
+    the same reason: the job script needs the six prompts to loop over, the
+    trials and the model config to pass on, and the clips and personas to print
+    before it queues anything -- and none of that is worth a second JSON reader
+    in shell.
+
+        META     <seed>  <trials>  <model config>  <total answers>
+        CLIP     <clip id>                   (one per clip)
+        PERSONA  <persona id>                (one per persona)
+        PROMPT   <instruction prompt path>   (one per prompt)
+    """
+    with spec_path.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    meta = payload.get("__meta__") if isinstance(payload, dict) else None
+    if not isinstance(meta, dict):
+        raise ValueError(
+            f"{spec_path} has no '__meta__'; it is not a sweep spec. Build one with "
+            "build_sweep_daic.sh."
+        )
+
+    required = ("seed", "trials", "model_config", "total_answers",
+                "clip_ids", "persona_ids", "instruction_prompts")
+    missing = [key for key in required if meta.get(key) is None]
+    if missing:
+        raise ValueError(
+            f"{spec_path}: __meta__ is missing {missing}. It predates this script; "
+            "rebuild it with build_sweep_daic.sh --rebuild."
+        )
+
+    rows = [
+        "\t".join(
+            [
+                "META",
+                str(meta["seed"]),
+                str(meta["trials"]),
+                str(meta["model_config"]),
+                str(meta["total_answers"]),
+            ]
+        )
+    ]
+    rows += [f"CLIP\t{clip_id}" for clip_id in meta["clip_ids"]]
+    rows += [f"PERSONA\t{persona_id}" for persona_id in meta["persona_ids"]]
+    rows += [f"PROMPT\t{path}" for path in meta["instruction_prompts"]]
+    print("\n".join(rows))
+
+
+def _short(value: Any, limit: int = 120) -> str:
+    """A value's repr, cut short: a persona's whole text in an error helps nobody."""
+    text = repr(value)
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+def spec_differences(existing: Any, rebuilt: Mapping[str, Any]) -> list[str]:
+    """What a rebuild disagrees with an existing spec about, in one line each.
+
+    Every difference matters, which is why this reports rather than resolves: two
+    models are only comparable if they answered the same clips, the same personas
+    and the same number of trials, so there is no field here that can be allowed
+    to drift between one model's submission and the next.
+    """
+    differences: list[str] = []
+    if not isinstance(existing, Mapping):
+        return ["the existing file is not a JSON object"]
+
+    existing_meta = existing.get("__meta__")
+    if not isinstance(existing_meta, Mapping):
+        differences.append("the existing file has no '__meta__'")
+        existing_meta = {}
+
+    rebuilt_meta: Mapping[str, Any] = rebuilt["__meta__"]
+    for key, value in rebuilt_meta.items():
+        if existing_meta.get(key) != value:
+            differences.append(
+                f"__meta__.{key}: on disk {_short(existing_meta.get(key))}, "
+                f"rebuilt {_short(value)}"
+            )
+    for key in sorted(set(existing_meta) - set(rebuilt_meta)):
+        differences.append(f"__meta__.{key}: on disk {_short(existing_meta[key])}, not rebuilt")
+
+    if existing.get("tasks") != rebuilt["tasks"]:
+        existing_ids = [
+            task.get("task_id")
+            for task in existing.get("tasks") or []
+            if isinstance(task, Mapping)
+        ]
+        rebuilt_ids = [task["task_id"] for task in rebuilt["tasks"]]
+        if existing_ids != rebuilt_ids:
+            differences.append(f"tasks: on disk {existing_ids}, rebuilt {rebuilt_ids}")
+        else:
+            # Same tasks in the same order, so what moved is inside one of them:
+            # the persona text, or the clips it answers.
+            differences.append(
+                "tasks: the same task ids, but their persona text or clips differ"
+            )
+    return differences
 
 
 def load_personas(personas_json_path: Path) -> list[dict[str, str]]:
@@ -328,6 +463,13 @@ def build_sampling_model_config(
 
 
 def main() -> None:
+    # Describing is a mode, not a flag: it reads a finished spec and builds
+    # nothing, so it takes its own parser and returns before any of the building
+    # arguments are looked at.
+    if "--describe" in sys.argv[1:]:
+        describe_spec(parse_describe_path(sys.argv[1:]).expanduser().resolve())
+        return
+
     args = parse_args()
 
     # Everything cheap that can fail, before the manifest is read: six prompt
@@ -416,22 +558,57 @@ def main() -> None:
         "tasks": tasks,
     }
 
+    sampling_model_config = build_sampling_model_config(
+        base_path=args.model_config.expanduser().resolve(),
+        temperature=args.temperature,
+        top_p=args.top_p,
+    )
+
+    # Reuse or refuse, never overwrite by default. The second model's submission
+    # rebuilds the first model's design and has to arrive at it exactly; if it
+    # does not, the manifest, the persona pool or the decoding parameters moved
+    # underneath the sweep, and letting the second model run anyway would produce
+    # two sets of answers that look comparable and are not.
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    model_config_path.write_text(
-        json.dumps(
-            build_sampling_model_config(
-                base_path=args.model_config.expanduser().resolve(),
-                temperature=args.temperature,
-                top_p=args.top_p,
-            ),
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    reused = False
+    if output_path.exists() and not args.rebuild:
+        with output_path.open(encoding="utf-8") as handle:
+            existing_spec = json.load(handle)
+        differences = spec_differences(existing_spec, spec)
+        if model_config_path.exists():
+            with model_config_path.open(encoding="utf-8") as handle:
+                if json.load(handle) != sampling_model_config:
+                    differences.append(
+                        f"{model_config_path.name}: on disk differs from the one derived "
+                        f"from {args.model_config}"
+                    )
+        if differences:
+            raise SystemExit(
+                f"[ERROR] {output_path} already exists and the rebuild disagrees with it:\n"
+                + "\n".join(f"  {difference}" for difference in differences)
+                + "\n        Every model at seed "
+                f"{args.seed} must answer one design, so this is refused.\n"
+                "        Submit the other models against the spec as it stands, or pass\n"
+                "        --rebuild to replace it and rerun every model from scratch."
+            )
+        reused = True
+    if not reused:
+        output_path.write_text(
+            json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        model_config_path.write_text(
+            json.dumps(sampling_model_config, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    elif not model_config_path.exists():
+        # The spec matched but its derived config is gone -- deleted, or written
+        # by a version of this script that named it something else. Restoring it
+        # is safe precisely because the spec it belongs to did match.
+        model_config_path.write_text(
+            json.dumps(sampling_model_config, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        print(f"[INFO] Restored the missing model config: {model_config_path}")
 
     print(f"[INFO] Clips    ({NUM_CLIPS}): {', '.join(clip_ids)}")
     print(f"[INFO] Personas ({NUM_PERSONAS}): "
@@ -444,10 +621,11 @@ def main() -> None:
         f"[INFO] Total answers: {NUM_CLIPS} x {NUM_PERSONAS} x "
         f"{len(instruction_prompts)} x {args.trials} = {total_answers}"
     )
-    print(f"[INFO] Sweep spec:   {output_path}")
+    print(
+        f"[INFO] Sweep spec:   {output_path}"
+        f"{' (reused; the rebuild matched it)' if reused else ' (written)'}"
+    )
     print(f"[INFO] Model config: {model_config_path}")
-    print("[INFO] Submitting it is a separate step: one persona.sh run per")
-    print("[INFO] instruction prompt, each with --trials and --model-config.")
 
 
 if __name__ == "__main__":

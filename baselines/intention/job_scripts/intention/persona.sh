@@ -47,6 +47,10 @@
 # --trials N asks for N answers per clip instead of one, for measuring how much a
 # model varies at fixed inputs. It needs sampling on in the model config; under
 # the packaged do_sample=false every trial returns identical text.
+#
+# Watch what --trials does to job length: --answers-per-job counts persona x clip
+# answers and knows nothing about it, so a 25-answer pack at --trials 50 is 1,250
+# generations. --time raises the worker's walltime for exactly that case.
 
 set -euo pipefail
 
@@ -82,6 +86,10 @@ instruction_prompt="${INTENTION_DEFAULT_INSTRUCTION_PROMPT}"
 no_instruction_prompt=0
 trials=""
 audio_mix_dir=""
+# Empty means the worker's own #SBATCH --time. Overridable because job size is
+# decided here: --answers-per-job is what makes a job long, and the header cannot
+# know what was packed into it.
+time_limit=""
 submit=0
 skip_complete=1
 max_jobs=""
@@ -115,6 +123,9 @@ usage() {
     echo "  --trials N              Answers per clip. Default: 1. Needs sampling on" >&2
     echo "                          in the model config to differ." >&2
     echo "  --audio-mix-dir PATH    Shared stacked-audio cache" >&2
+    echo "  --time HH:MM:SS         sbatch walltime override. Default: the worker's" >&2
+    echo "                          own #SBATCH --time. Raise it for large" >&2
+    echo "                          --answers-per-job or --trials values." >&2
     echo "  --submit                Queue jobs. Default: dry run" >&2
     echo "  --no-skip-complete      Include packs whose outputs already exist" >&2
     echo "  --overwrite             Recompute existing persona outputs" >&2
@@ -145,6 +156,7 @@ while [[ $# -gt 0 ]]; do
         --no-instruction-prompt) no_instruction_prompt=1; shift ;;
         --trials)             trials="${2:?Missing value for --trials}"; shift 2 ;;
         --audio-mix-dir)      audio_mix_dir="${2:?Missing value for --audio-mix-dir}"; shift 2 ;;
+        --time)               time_limit="${2:?Missing value for --time}"; shift 2 ;;
         --job-script)         job_script="${2:?Missing value for --job-script}"; shift 2 ;;
         --max-jobs)           max_jobs="${2:?Missing value for --max-jobs}"; shift 2 ;;
         --sleep)              sleep_seconds="${2:?Missing value for --sleep}"; shift 2 ;;
@@ -229,6 +241,12 @@ if [[ -n "${trials}" ]]; then
     case "${trials}" in
         ''|*[!0-9]*|0) echo "[ERROR] --trials must be a positive integer: ${trials}" >&2; exit 1 ;;
     esac
+fi
+# Checked here rather than left to sbatch: a malformed value would be rejected
+# once per job, after the first few had already been accepted.
+if [[ -n "${time_limit}" && ! "${time_limit}" =~ ^([0-9]+-)?[0-9]{1,2}:[0-9]{2}:[0-9]{2}$ ]]; then
+    echo "[ERROR] --time must look like HH:MM:SS or D-HH:MM:SS: ${time_limit}" >&2
+    exit 1
 fi
 
 # --no-instruction-prompt wins over the default, but contradicts an explicit
@@ -372,6 +390,9 @@ echo "[INFO] trials per clip    = ${trials:-1}"
 echo "[INFO] selected runs      = ${total_runs}"
 echo "[INFO] total answers      = ${total_answers}"
 echo "[INFO] answers per job    = ${answers_per_job} (whole personas are never split)"
+# No apostrophe in the fallback: bash re-parses the word in ${x:-word} even
+# inside double quotes, so one would open a quote and take the rest of the file.
+echo "[INFO] walltime           = ${time_limit:-<the worker header #SBATCH --time>}"
 echo "[INFO] packed jobs        = ${packed_jobs}"
 echo "[INFO] persona output dir = ${persona_output_dir}"
 echo "[INFO] submit             = ${submit}"
@@ -429,6 +450,11 @@ for (( chunk = 0; chunk < ${#chunk_selector_starts[@]}; chunk++ )); do
         --export=ALL,INTENTION_PERSONA_JOB=1
         --gres="gpu:nvidia_rtx_pro_6000:${backend_gpu_count}"
         --job-name="${job_prefix}_${backend}_${selector_start}-${selector_end}"
+    )
+    # Before the script path: an sbatch option after it belongs to the job, not
+    # to sbatch.
+    [[ -n "${time_limit}" ]] && sbatch_cmd+=(--time="${time_limit}")
+    sbatch_cmd+=(
         "${job_script}"
         --backend "${backend}"
         --mode "${mode}"
