@@ -12,6 +12,39 @@ GLOBAL_TRANSLATION = np.array([0.0, 0.0, 3.5], dtype=float)
 # GLOBAL_ROTATION = R.from_euler("xyz", [0, 0, 0], degrees=True).as_matrix()
 # GLOBAL_TRANSLATION = np.array([1.0, 1.0, 0.0], dtype=float)
 
+# Hardcode a camera viewpoint here (paste the dict printed on space-press) to
+# set it as the starting view. Leave as None to use the default view.
+STARTING_CAMERA_STATE = {
+    "position": [
+        5.7512796283431085,
+        3.2245257974149664,
+        4.218728715388076
+    ],
+    "rotation": [
+        0.47366075453516204,
+        0.47282452471392267,
+        0.5271645412385363,
+        0.5236220057474603
+    ],
+    "scale": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "reference_up": [
+        0.0,
+        0.0,
+        1.0
+    ],
+    "fov": 50.0,
+    "width": 5.694629669189453,
+    "height": 7.5956726169201225,
+    "depth": 9.508053877617346,
+    "zoom": 0.75,
+    "maintain_aspect": True,
+    "depth_range": None
+}
+
 # Unflip the camera text.
 TEXT_UPRIGHT_ROTATION = R.from_euler("zyx", [90, 90, 0], degrees=True).as_quat()
 
@@ -136,6 +169,20 @@ def main(data_folders: tuple[Path, ...], axis_scale: float) -> None:
         colors="yellow",
         sizes=10,
     )
+
+    if STARTING_CAMERA_STATE is not None:
+        subplot.camera.set_state(STARTING_CAMERA_STATE)
+
+    def _on_key_down(event) -> None:
+        if event.key != " ":
+            return
+        state = {
+            key: value.tolist() if isinstance(value, np.ndarray) else value
+            for key, value in subplot.camera.get_state().items()
+        }
+        click.echo("STARTING_CAMERA_STATE = " + json.dumps(state, indent=4))
+
+    fig.renderer.add_event_handler(_on_key_down, "key_down")
 
     fig.show()
     fpl.loop.run()
