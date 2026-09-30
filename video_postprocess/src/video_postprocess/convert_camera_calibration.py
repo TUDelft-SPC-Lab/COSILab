@@ -26,7 +26,10 @@ def load_data(
 ) -> list[dict[str, Any]]:
     with calibrator_file.open() as f:
         cam_data = json.load(f)
-    cam_data = cam_data["Calibration"]["cameras"]
+    if "Calibration" in cam_data:
+        cam_data = cam_data["Calibration"]["cameras"]
+    else:
+        cam_data = cam_data["calibration"]["cameras"]
 
     if (
         cam_data[0]["model"]["polymorphic_name"]
