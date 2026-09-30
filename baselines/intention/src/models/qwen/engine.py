@@ -146,9 +146,9 @@ class QwenOmniModel(BaseMultimodalModel):
             flush=True,
         )
         # Left unset by default, which is not the same as choosing eager: it
-        # means whatever this transformers decides, and on 4.52 -- what the qwen
-        # image carried before the 4.54 rebuild -- that was eager for every tower
-        # even though the top-level config reported sdpa. Eager materialises a
+        # means whatever this transformers decides, and on 4.52 that was eager
+        # for every tower even though the top-level config reported sdpa, so an
+        # older image is not safe to leave unset. Eager materialises a
         # full N-by-N score matrix per attention layer, and the vision tower
         # attends over patches -- four per visual token -- so its matrix is
         # sixteen times the one the token count suggests. That is what put a

@@ -131,17 +131,37 @@ def run_inference_pass(
     no_audio: bool,
     model,
     model_config: ModelRunConfig,
+    trials: int = 1,
 ) -> list[dict[str, Any]]:
-    """One turn per retained record, in manifest order."""
+    """``trials`` answers per retained record, in manifest order.
+
+    Record-major: every trial of one clip is emitted before the next clip
+    starts, so a result file reads in the same order it did before trials
+    existed and a truncated one is truncated at a clip boundary.
+
+    The turn is built once per record and generated from ``trials`` times.
+    That is the point of doing this here rather than by repeating a clip in the
+    plan: decoding the video and laying out the media parts is per-clip work,
+    and only the generation is per-trial. Note the answers vary only if the
+    model config has sampling on -- see --trials in cli.py.
+    """
     results: list[dict[str, Any]] = []
     total_records = len(records)
 
     for processed_index, item in enumerate(records, start=1):
+        trial_label = "" if trials == 1 else f" x{trials}"
         print(
             f"[{processed_index}/{total_records}] "
-            f"{item['record_id']} -> {Path(item['video_path']).name}",
+            f"{item['record_id']} -> {Path(item['video_path']).name}{trial_label}",
             flush=True,
         )
+
+        # Built outside the trial loop, but its failure still costs only this
+        # clip: every trial of it reports the same error, so the row count is
+        # trials x records whatever happens and nothing downstream has to
+        # special-case a short clip.
+        turn = None
+        build_error: str | None = None
         try:
             turn = mode.build_turn(
                 item,
@@ -150,12 +170,10 @@ def run_inference_pass(
                 model=model,
                 model_config=model_config,
             )
-            response = model.generate([turn], model_config.generation)
         except Exception as exc:
             # Recorded, not raised: a clip the model chokes on should cost that
-            # clip, not the rest of the shard. build_turn is inside the try for
-            # the same reason -- decoding a corrupt video fails here too.
-            response = f"[ERROR] {exc}"
+            # clip, not the rest of the shard. Decoding a corrupt video fails here.
+            build_error = f"[ERROR] {exc}"
             print(f"  [WARN] Error: {exc}", flush=True)
 
         # Everything past the clip is the mode's to report. This module must not
@@ -172,19 +190,34 @@ def run_inference_pass(
             print(f"  [WARN] {mode.name}.result_fields failed: {exc}", flush=True)
             mode_fields = {"result_fields_error": f"{type(exc).__name__}: {exc}"}
 
-        results.append(
-            {
-                "record_index": item["record_index"],
-                "record_id": item["record_id"],
-                "source_video_path": item["source_video_path"],
-                "rewritten_video_path": item["rewritten_video_path"],
-                "video_path": item["video_path"],
-                **mode_fields,
-                "system": system_prompt,
-                "user": item["user_prompt"],
-                "assistant": response,
-            }
-        )
+        for trial in range(trials):
+            if build_error is not None:
+                response = build_error
+            else:
+                try:
+                    response = model.generate([turn], model_config.generation)
+                except Exception as exc:
+                    # Per trial, so one bad generation costs one row rather than
+                    # the remaining trials of a clip that may well answer next time.
+                    response = f"[ERROR] {exc}"
+                    print(f"  [WARN] trial {trial}: {exc}", flush=True)
+
+            results.append(
+                {
+                    "record_index": item["record_index"],
+                    "record_id": item["record_id"],
+                    # 0-based, and present even at trials=1 so every result file
+                    # has the same columns whether or not the run repeated itself.
+                    "trial": trial,
+                    "source_video_path": item["source_video_path"],
+                    "rewritten_video_path": item["rewritten_video_path"],
+                    "video_path": item["video_path"],
+                    **mode_fields,
+                    "system": system_prompt,
+                    "user": item["user_prompt"],
+                    "assistant": response,
+                }
+            )
 
     return results
 
@@ -212,6 +245,10 @@ def build_summary(
     and the frame policy, so a result file answers "what produced this" without
     anyone having to find the sbatch line that made it.
 
+    ``processed_count`` counts result ROWS, not clips: under ``--trials N`` each
+    clip contributes N of them, and ``trials`` beside it is what makes the two
+    numbers reconcilable.
+
     One literal with a fixed key order for every selector: a field a selector
     does not own is written as None rather than omitted, so two result files can
     be diffed without the keys shifting under each other.
@@ -222,6 +259,15 @@ def build_summary(
     return {
         "input_json": str(input_json_path),
         "prompt_config": str(run.get("prompt_config_path") or prompt_config_path),
+        # Beside the config rather than instead of it: the instruction prompt
+        # replaced that config's user prompt, and the config still supplied
+        # everything else -- the system prompt, and fa's per-speaker fragments.
+        # None means --no-instruction-prompt, i.e. the config asked its own.
+        "instruction_prompt": (
+            None
+            if args.no_instruction_prompt
+            else str(args.instruction_prompt.expanduser().resolve())
+        ),
         "backend": backend,
         "mode": mode,
         "persona_prompt": None if persona_path is None else str(persona_path),
@@ -244,6 +290,7 @@ def build_summary(
         "retained_count": len(prepared.kept),
         "skipped_count": len(prepared.skipped),
         "processed_count": len(results),
+        "trials": args.trials,
         "error_count": error_count,
         "no_audio": args.no_audio,
         **describe_model_config(model_config),
@@ -354,6 +401,7 @@ def execute_runs(
                 no_audio=args.no_audio,
                 model=model,
                 model_config=model_config,
+                trials=args.trials,
             )
         finally:
             if run_prompt_config is not None:

@@ -76,6 +76,7 @@ from intention_inference.runs.base import (
     RunContext,
 )
 from intention_inference.prompt import load_prompt_config
+from intention_inference.instruction_prompt import apply_to_prompt_config
 
 __all__ = [
     "TASK_ID_PATTERN",
@@ -366,6 +367,7 @@ def build_spec_runs(
     default_prompt_config: Mapping[str, str],
     default_prompt_config_path: Path,
     load_prompt_config: Callable[[Path], dict[str, str]],
+    instruction_text: str | None = None,
 ) -> list[dict[str, Any]]:
     """Expand spec tasks into one inference run each.
 
@@ -378,6 +380,11 @@ def build_spec_runs(
 
     Prompt configs are cached by path, so a spec where 500 tasks share two
     configs reads two files.
+
+    ``instruction_text`` overrides the user prompt of every config here, the
+    task's own included. ``--prompt-variant`` means "this is the wording being
+    measured", so a task that named a config of its own must not be the one run
+    that quietly kept a different question.
     """
     prompt_config_cache: dict[Path, dict[str, str]] = {}
     runs: list[dict[str, Any]] = []
@@ -405,7 +412,10 @@ def build_spec_runs(
                     f"Task {task_id!r}: prompt config not found: {prompt_config_path}"
                 )
             if prompt_config_path not in prompt_config_cache:
-                prompt_config_cache[prompt_config_path] = load_prompt_config(prompt_config_path)
+                task_config = load_prompt_config(prompt_config_path)
+                if instruction_text is not None:
+                    task_config = apply_to_prompt_config(task_config, instruction_text)
+                prompt_config_cache[prompt_config_path] = task_config
             prompt_config = prompt_config_cache[prompt_config_path]
             effective_prompt_config_path = prompt_config_path
 
@@ -529,6 +539,7 @@ class SpecRuns(PersonaRunsSelector):
             },
             default_prompt_config_path=ctx.prompt_config_path,
             load_prompt_config=load_prompt_config,
+            instruction_text=ctx.instruction_text,
         )
         print(f"[INFO] Task output dir: {ctx.persona_output_dir}")
 

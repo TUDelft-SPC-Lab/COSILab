@@ -60,6 +60,12 @@ class RunContext:
     output_path: Path
     prompt_config_path: Path
     prompt_config: dict[str, str]
+    # --instruction-prompt's text, already folded into prompt_config above. Here
+    # as well because a selector may load prompt configs of its own -- a task spec
+    # can name one per task -- and those have to be overridden the same way.
+    # Run-wide rather than per-selector, which is why it belongs on the context.
+    # None under --no-instruction-prompt.
+    instruction_text: str | None
     # The --system-prompt override already applied, so a selector never re-derives it.
     system_prompt: str
     persona_output_dir: Path | None

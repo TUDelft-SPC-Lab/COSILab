@@ -69,9 +69,9 @@ intention_backend_defaults() {
             # it, models/qwen/engine.py says so and QWEN_OMNI_UTILS_PATH is the
             # way to supply it from outside.
             #
-            # The -tf4.54 image replaced the 4.52 one built from
-            # apptainer/qwen2.5-omni-inference.def. 4.54 is the first release
-            # whose Qwen2.5-Omni vision SDPA path attends to the cu_seqlens
+            # Built from apptainer/qwen2.5-omni-inference.def, which pins
+            # transformers 4.54.0 and asserts it at build time. 4.54 is the
+            # first release whose Qwen2.5-Omni vision SDPA path attends to the cu_seqlens
             # chunks separately instead of over the combined visual sequence, so
             # vision memory grows linearly in frame count rather than
             # quadratically. Measured on a 2-GPU node with qwen7b, one image plus
@@ -83,11 +83,11 @@ intention_backend_defaults() {
             # Before the first run, confirm the image can reach both:
             #
             #   apptainer exec \
-            #     /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif \
+            #     /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif \
             #     python -c "import qwen_omni_utils, av, librosa, transformers;
             #                from transformers import Qwen2_5OmniForConditionalGeneration;
             #                print(transformers.__version__)"
-            BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference-tf4.54.sif"
+            BACKEND_SIF_PATH="/tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif"
             ;;
         qwen3omni30b)
             # Its own image again, not the qwen7b one: Qwen3OmniMoe* landed in
