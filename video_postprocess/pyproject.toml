@@ -12,6 +12,7 @@ dependencies = [
     "click>=8.4.2",
     "dearpygui>=2.3.1",
     "fastplotlib>=0.6.1",
+    "glfw>=2.10.2",
     "matplotlib>=3.11.1",
     "numpy>=2.4.6",
     "opencv-python>=4.13.0.92",
