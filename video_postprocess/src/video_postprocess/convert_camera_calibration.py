@@ -30,9 +30,9 @@ def load_data(
 
     if (
         cam_data[0]["model"]["polymorphic_name"]
-        != "libCalib::CameraModelOpenCV"
+        != "libCalib::CameraModelOpenCVFisheye"
     ):
-        error_msg = f"Expected 'libCalib::CameraModelOpenCV', got '{cam_data[0]['model']['polymorphic_name']}'"
+        error_msg = f"Expected 'libCalib::CameraModelOpenCVFisheye', got '{cam_data[0]['model']['polymorphic_name']}'"
         raise RuntimeError(error_msg)
 
     if cameras_names is None:
