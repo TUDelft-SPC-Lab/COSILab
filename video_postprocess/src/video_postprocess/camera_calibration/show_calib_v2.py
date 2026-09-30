@@ -5,7 +5,15 @@ import click
 import cv2
 import fastplotlib as fpl
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
+GLOBAL_ROTATION = R.from_euler("xyz", [180, 0, 0], degrees=True).as_matrix()
+GLOBAL_TRANSLATION = np.array([0.0, 0.0, 3.5], dtype=float)
+# GLOBAL_ROTATION = R.from_euler("xyz", [0, 0, 0], degrees=True).as_matrix()
+# GLOBAL_TRANSLATION = np.array([1.0, 1.0, 0.0], dtype=float)
+
+# Unflip the camera text.
+TEXT_UPRIGHT_ROTATION = R.from_euler("zyx", [90, 90, 0], degrees=True).as_quat()
 
 def camera_pose_from_extrinsics(rvec, tvec):
     """
@@ -100,13 +108,17 @@ def main(data_folders: tuple[Path, ...], axis_scale: float) -> None:
 
     for label, rvec, tvec in extrinsics:
         C, Rcw = camera_pose_from_extrinsics(rvec, tvec)
+
+        Rcw = GLOBAL_ROTATION @ Rcw
+        C = GLOBAL_ROTATION @ C + GLOBAL_TRANSLATION
+
         camera_centers.append(C)
 
         for pts, color in create_camera_axes(C, Rcw, scale=axis_scale):
             subplot.add_line(data=pts, colors=color, thickness=4)
 
         label_pos = C + np.array([axis_scale * 0.2, axis_scale * 0.2, 0.0])
-        subplot.add_text(
+        camera_label = subplot.add_text(
             label,
             font_size=max(axis_scale * 0.2, 0.01),
             face_color="white",
@@ -116,6 +128,7 @@ def main(data_folders: tuple[Path, ...], axis_scale: float) -> None:
             offset=tuple(float(x) for x in label_pos),
             anchor="bottom-left",
         )
+        camera_label.rotation = TEXT_UPRIGHT_ROTATION
 
     camera_centers_array = np.asarray(camera_centers)
     subplot.add_scatter(
