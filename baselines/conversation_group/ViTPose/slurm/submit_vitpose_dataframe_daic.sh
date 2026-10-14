@@ -18,14 +18,14 @@ NEON=/tudelft.net/staff-umbrella/neon
 VITPOSE_DIR=/home/nfs/zli33/projects/ViTPose
 SIF="${SIF:-${NEON}/apptainer/vitpose-0.0.5.sif}"
 
-RESULTS_ROOT="${RESULTS_ROOT:-${NEON}/ingroup_dataset/B2_pipeline/vitpose_results}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${NEON}/ingroup_dataset/B2_pipeline/vitpose_dataframe}"
+RESULTS_ROOT="${RESULTS_ROOT:-${NEON}/cosilab_project/B2_pipeline/vitpose_results}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${NEON}/cosilab_project/B2_pipeline/vitpose_dataframe}"
 
-CAMERA_PARAMS_ROOT="${CAMERA_PARAMS_ROOT:-${NEON}/ingroup_dataset/processed_data/gopro_data/camera_calibration/camera_params}"
+CAMERA_PARAMS_ROOT="${CAMERA_PARAMS_ROOT:-${NEON}/cosilab_project/processed_data/gopro_data/camera_calibration/camera_params}"
 CAMERA_NUMBERS="${CAMERA_NUMBERS:-}"
-GT_GROUPS_ROOT="${GT_GROUPS_ROOT:-${NEON}/ingroup_dataset/B2_pipeline/cgroup_annotation}"
-PLOT_DIR="${PLOT_DIR:-${NEON}/ingroup_dataset/B2_pipeline/person_plotting}"
-FRAMES_ROOT="${FRAMES_ROOT:-${NEON}/ingroup_dataset/B2_pipeline/video_segs_raw}"
+GT_GROUPS_ROOT="${GT_GROUPS_ROOT:-${NEON}/cosilab_project/B2_pipeline/cgroup_annotation}"
+PLOT_DIR="${PLOT_DIR:-${NEON}/cosilab_project/B2_pipeline/person_plotting}"
+FRAMES_ROOT="${FRAMES_ROOT:-${NEON}/cosilab_project/B2_pipeline/video_segs_raw}"
 
 for arg in "$@"; do
     case "$arg" in

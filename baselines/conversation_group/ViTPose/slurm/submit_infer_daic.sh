@@ -27,7 +27,7 @@ POSE_CKPT="${POSE_CKPT:-${NEON}/code/ViTPose/work_dirs/ViTPose_coco_plus_conflab
 #   BATCH=cam06_batch02 sbatch slurm/submit_infer_daic.sh
 # ---------------------------------------------------------------------------
 BATCH="${BATCH:-cam06_batch01}"
-DATA_ROOT="${DATA_ROOT:-${NEON}/ingroup_dataset/B2_pipeline/sam3_output/${BATCH}}"
+DATA_ROOT="${DATA_ROOT:-${NEON}/cosilab_project/B2_pipeline/sam3_output/${BATCH}}"
 
 for i in $(seq 1 10); do
     [[ -d "${DATA_ROOT}" ]] && break

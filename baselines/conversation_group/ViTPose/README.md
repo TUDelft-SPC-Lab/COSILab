@@ -151,7 +151,7 @@ The top-level keys under `annotations` are frame IDs. The keys under `bbox` are 
 The Slurm wrapper looks for SAM3 output here by default:
 
 ```text
-/tudelft.net/staff-umbrella/neon/ingroup_dataset/B2_pipeline/sam3_output/<BATCH>/
+/tudelft.net/staff-umbrella/neon/cosilab_project/B2_pipeline/sam3_output/<BATCH>/
 ```
 
 ## 2. Running INGroup ViTPose
@@ -164,8 +164,8 @@ Default paths in the job:
 NEON=/tudelft.net/staff-umbrella/neon
 VITPOSE_DIR=/home/nfs/zli33/projects/ViTPose
 SIF=${NEON}/apptainer/vitpose-0.0.5.sif
-DATA_ROOT=${NEON}/ingroup_dataset/B2_pipeline/sam3_output/${BATCH}
-OUT_DIR=${NEON}/ingroup_dataset/B2_pipeline/vitpose_results/${BATCH}
+DATA_ROOT=${NEON}/cosilab_project/B2_pipeline/sam3_output/${BATCH}
+OUT_DIR=${NEON}/cosilab_project/B2_pipeline/vitpose_results/${BATCH}
 ```
 
 The job implementation does the following:
@@ -224,7 +224,7 @@ python demo/infer_mask_bbox.py \
 The resulting output layout is:
 
 ```text
-/tudelft.net/staff-umbrella/neon/ingroup_dataset/B2_pipeline/vitpose_results/
+/tudelft.net/staff-umbrella/neon/cosilab_project/B2_pipeline/vitpose_results/
   cam06_batch02/
     vitpose_keypoints.json
     vitpose_kp.mp4
@@ -254,12 +254,12 @@ Use `slurm/submit_vitpose_dataframe_daic.sh` after `vitpose_keypoints.json` file
 Default paths in the conversion job:
 
 ```text
-RESULTS_ROOT=${NEON}/ingroup_dataset/B2_pipeline/vitpose_results
-OUTPUT_ROOT=${NEON}/ingroup_dataset/B2_pipeline/vitpose_dataframe
-CAMERA_PARAMS_ROOT=${NEON}/ingroup_dataset/processed_data/gopro_data/camera_calibration/camera_params
-GT_GROUPS_ROOT=${NEON}/ingroup_dataset/B2_pipeline/cgroup_annotation
-PLOT_DIR=${NEON}/ingroup_dataset/B2_pipeline/person_plotting
-FRAMES_ROOT=${NEON}/ingroup_dataset/B2_pipeline/video_segs_raw
+RESULTS_ROOT=${NEON}/cosilab_project/B2_pipeline/vitpose_results
+OUTPUT_ROOT=${NEON}/cosilab_project/B2_pipeline/vitpose_dataframe
+CAMERA_PARAMS_ROOT=${NEON}/cosilab_project/processed_data/gopro_data/camera_calibration/camera_params
+GT_GROUPS_ROOT=${NEON}/cosilab_project/B2_pipeline/cgroup_annotation
+PLOT_DIR=${NEON}/cosilab_project/B2_pipeline/person_plotting
+FRAMES_ROOT=${NEON}/cosilab_project/B2_pipeline/video_segs_raw
 ```
 
 Submit conversion for all cameras found under `RESULTS_ROOT`:

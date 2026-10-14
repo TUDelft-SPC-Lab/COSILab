@@ -61,7 +61,7 @@ import pandas as pd
 BODY_HEIGHT = 1.7
 CONF_THRESHOLD = 0.0
 CAMERA_PARAMS_ROOT = Path(
-    "/tudelft.net/staff-umbrella/neon/ingroup_dataset/processed_data/"
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/processed_data/"
     "gopro_data/camera_calibration/camera_params"
 )
 
@@ -130,7 +130,7 @@ FRAMES_PER_SEG = 600       # each raw video segment is 10 s at 60 fps (210 segs 
 
 # Root directory holding cam<XX>/cam<XX>_seg<YYY>_frame0.jpg preview images.
 FRAMES_ROOT_DEFAULT = Path(
-    "/tudelft.net/staff-umbrella/neon/ingroup_dataset/"
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/"
     "B2_pipeline/video_segs_raw"
 )
 
@@ -1053,7 +1053,7 @@ def parse_args():
         help=(
             "Directory containing mingle_1_groups.csv (cam 6-10) and/or "
             "mingle_2_groups.csv (cam 1-5) with GT conversational groups. "
-            "Default on DAIC: /tudelft.net/staff-umbrella/neon/ingroup_dataset/"
+            "Default on DAIC: /tudelft.net/staff-umbrella/neon/cosilab_project/"
             "B2_pipeline/cgroup_annotation/"
         ),
     )
