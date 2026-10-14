@@ -16,10 +16,10 @@ dependencies = [
     "soundfile",
     "Pillow",
     "av",
-    # Qwen2.5-Omni's preprocessing. Not vendored in this repo and not needed on
-    # the cluster, where it comes from the container image -- models/qwen/engine.py
-    # imports it lazily for exactly that reason. Declared so an off-cluster
-    # `uv run` can still resolve it.
+    # Qwen2.5-Omni / Qwen3-Omni preprocessing. Not vendored in this repo and not
+    # needed on the cluster, where it comes from the container image --
+    # models/qwen/shared.py imports it lazily for exactly that reason. Declared so
+    # an off-cluster `uv run` can still resolve it.
     "qwen-omni-utils",
 ]
 

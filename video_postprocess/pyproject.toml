@@ -1,7 +1,7 @@
 [project]
 name = "video_postprocess"
 version = "0.1.0"
-description = "Add your description here"
+description = "GoPro video postprocessing and camera calibration utilities for COSILab"
 readme = "README.md"
 authors = [
     { name = "Zonghuan Li", email = "z.li-25@tudelft.nl" }
@@ -22,7 +22,6 @@ dependencies = [
     "pydantic>=2.13.4",
     "python-ffmpeg>=2.0.12",
     "pyyaml>=6.0.3",
-    "scikit-learn>=1.9.0",
     "scipy>=1.17.1",
     "tqdm>=4.68.3",
     "typer>=0.27.2",

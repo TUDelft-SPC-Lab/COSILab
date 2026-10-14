@@ -19,10 +19,12 @@ The scripts use `ffmpeg` / `ffprobe` through Python, so both command-line tools 
     ```bash
     cd COSILab/video_postprocess
     ```
-2. Create a venv and install the dependencies
+4. Create a venv and install the dependencies
     ```bash
     uv sync
     ```
+
+The scripts live in the `video_postprocess` package under `src/video_postprocess/`, so the commands below run them as modules (`uv run python -m video_postprocess.<script>`) from this folder.
 
 ## 1. Fix Corrupted Videos
 
@@ -37,12 +39,12 @@ fix_gopro_battery_dies_video.py
 Run:
 
 ```bash
-uv run python fix_gopro_battery_dies_video.py \
+uv run python -m video_postprocess.fix_gopro_battery_dies_video \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/fixed_videos
 ```
 
-The script checks the last video in each camera folder. If it is truncated, it repairs it with [untrunc](https://github.com/anthwlock/untrunc) and writes the fixed file into the target directory, preserving the camera subfolder layout.
+The script checks the last video in each camera folder. If it is truncated, it repairs it with [untrunc](https://github.com/anthwlock/untrunc) and writes the fixed file into the target directory, preserving the camera subfolder layout. `untrunc` is an external tool and must be installed separately.
 
 ## 2. Concatenate Raw Video Segments by Timecode
 
@@ -67,7 +69,7 @@ raw_videos/
 Run:
 
 ```bash
-uv run python concat_videos.py \
+uv run python -m video_postprocess.concat_videos \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/concatenated_videos
 ```
@@ -119,7 +121,7 @@ raw_videos/
 Cut a relative interval from every camera:
 
 ```bash
-uv run python extract_segment_from_video.py \
+uv run python -m video_postprocess.extract_segment_from_video \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/output_segments \
   --start-time 00:01:00 \
@@ -131,7 +133,7 @@ With no `--use-timecode`, `--start-time` and `--end-time` are interpreted as off
 Cut an absolute timecode interval:
 
 ```bash
-uv run python extract_segment_from_video.py \
+uv run python -m video_postprocess.extract_segment_from_video \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/output_segments \
   --start-time 13:45:00 \
@@ -163,7 +165,7 @@ output_segments/
 Set `CAMERA_TO_PROCESS` to the camera folder name:
 
 ```bash
-CAMERA_TO_PROCESS=cam02 uv run python extract_segment_from_video.py \
+CAMERA_TO_PROCESS=cam02 uv run python -m video_postprocess.extract_segment_from_video \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/output_segments \
   --start-time 13:45:00 \
@@ -183,7 +185,7 @@ For the current INGroup GoPro annotation split, `cut_gopro_annotation_segments.p
 Run:
 
 ```bash
-uv run python cut_gopro_annotation_segments.py \
+uv run python -m video_postprocess.cut_gopro_annotation_segments \
   --group-06-10-directory /path/to/group_06_10_raw_videos \
   --group-01-05-directory /path/to/group_01_05_raw_videos \
   --target-directory /path/to/annotation_segments
@@ -204,7 +206,7 @@ and writes one cut video per camera into each segment folder.
 `batch_extract_segments.py` calls `extract_segment_from_video.py` once for each of a hard-coded list of 30-second timecode segments (`TIME_SEGS_1` / `TIME_SEGS_2`, edit the script to change them):
 
 ```bash
-uv run python batch_extract_segments.py \
+uv run python -m video_postprocess.batch_extract_segments \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/output_segments \
   --segment-set both \
@@ -234,7 +236,7 @@ raw_videos/
 Run:
 
 ```bash
-uv run python extract_frames_from_video.py \
+uv run python -m video_postprocess.extract_frames_from_video \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/frames \
   --start-time 13:45:00 \
@@ -259,7 +261,7 @@ frames/
 To sample instead of extracting every frame, pass `--every-n-frames`:
 
 ```bash
-uv run python extract_frames_from_video.py \
+uv run python -m video_postprocess.extract_frames_from_video \
   --source-directory /path/to/raw_videos \
   --target-directory /path/to/frames \
   --every-n-frames 10
@@ -290,7 +292,7 @@ raw_videos/
 Run:
 
 ```bash
-uv run python generate_timestamps_csv.py \
+uv run python -m video_postprocess.generate_timestamps_csv \
   --source-directory /path/to/raw_videos \
   --output-directory /path/to/timestamp_csvs
 ```
@@ -345,6 +347,8 @@ camera_calibration/
 
 ### Step 1: Prepare Calibration Images
 
+Calibration frames can be sampled from the raw GoPro chunks with `extract_frames_from_video.py` (see [section 4](#4-split-video-into-frame-images)). `job_scripts/extract_calib.sh` (Linux) and `job_scripts/extract_calib.ps1` (Windows) do this for the side-view and top-view cameras of both mingle sessions, using the calibration timecode intervals and `--every-n-frames` sampling; edit the data paths at the top of the script before running it.
+
 `generate_calib_project.py` expects one folder per camera:
 
 ```text
@@ -364,7 +368,7 @@ The script sorts camera folders and image filenames. Images with the same sorted
 Run:
 
 ```bash
-uv run python generate_calib_project.py /path/to/calib_images \
+uv run python -m video_postprocess.generate_calib_project /path/to/calib_images \
   --output-filename /path/to/calib_images/calib-project.json
 ```
 
@@ -389,7 +393,7 @@ convert_camera_calibration.py
 Convert to IDIAP-style per-camera JSON files:
 
 ```bash
-uv run python convert_camera_calibration.py \
+uv run python -m video_postprocess.convert_camera_calibration \
   --calibrator-file /path/to/solved-calib-project.json \
   --camera-format idiap \
   --output-directory /path/to/camera_params \
@@ -425,7 +429,7 @@ tvec
 Convert to EasyMocap format instead:
 
 ```bash
-uv run python convert_camera_calibration.py \
+uv run python -m video_postprocess.convert_camera_calibration \
   --calibrator-file /path/to/solved-calib-project.json \
   --camera-format easymocap \
   --output-directory /path/to/easymocap_camera \
@@ -469,7 +473,7 @@ calibrator_intrinsics/
 Run:
 
 ```bash
-uv run python convert_idiap_to_calibrator.py \
+uv run python -m video_postprocess.convert_idiap_to_calibrator \
   --idiap-extrinsics-directory /path/to/idiap_extrinsics \
   --calibrator-intrinsics-directory /path/to/calibrator_intrinsics \
   --output-directory /path/to/combined_calibrator \
@@ -485,7 +489,27 @@ The script:
 5. Transforms all other camera extrinsics into the first camera coordinate system.
 6. Writes one combined calibrator JSON per camera.
 
-## 6. Submit on the Cluster
+### Optional: Calibration Inspection Helpers
+
+`camera_calibration/` also contains standalone helpers that are not required by the conversion steps above:
+
+```text
+camera_calibration/
+  detect_checkerboard.py      OpenCV checkerboard detection, written as calibrator detections JSON (typer CLI)
+  show_saved_detections.py    interactive viewer for detections stored in a calibrator JSON (dearpygui, typer CLI)
+  show_calib_v2.py            3D plot of camera poses from IDIAP-style <camera>/extrinsic.json folders (fastplotlib)
+  relative_cam.py             chains two IDIAP extrinsics so camera 2 is expressed relative to camera 0
+```
+
+Run them the same way, e.g.:
+
+```bash
+uv run python -m video_postprocess.camera_calibration.show_calib_v2 /path/to/camera_params
+```
+
+where `/path/to/camera_params` is an IDIAP output directory from Step 3 (one subfolder per camera, each with `extrinsic.json`). Several such directories can be passed at once.
+
+## 7. Submit on the Cluster
 
 `job_scripts/` holds the Slurm wrappers that run the segment-cutting steps above inside the `video_postprocess` Apptainer image, so no `uv sync` is needed on the cluster:
 
@@ -494,6 +518,8 @@ job_scripts/
   extract_segments_daic.sh    DAIC, annotation or batch segment cutting
   extract_segments.sh         DelftBlue, batch segment cutting only
 ```
+
+(`job_scripts/extract_calib.sh` and `extract_calib.ps1` are not Slurm wrappers: they run locally through `uv run --project`, see [Step 1: Prepare Calibration Images](#step-1-prepare-calibration-images).)
 
 Both scripts bind the COSILab checkout into the container and set `PYTHONPATH` to `<repo>/video_postprocess/src`, so the job runs the code from your checkout rather than the copy frozen into the image at build time. Build the image first if it is missing:
 
@@ -576,6 +602,7 @@ Keep these optional wrappers only if you use them:
 
 ```text
 video_postprocess/
+  fix_gopro_battery_dies_video.py    # repair a truncated last chunk with untrunc
   cut_gopro_annotation_segments.py   # fixed 30-second GoPro annotation cuts
   batch_extract_segments.py          # predefined segment lists TIME_SEGS_1 / TIME_SEGS_2
   py.typed                           # optional typing marker, not needed at runtime
@@ -597,24 +624,36 @@ video_postprocess/
     easymocap.py
 ```
 
-Required uv run python packages for video concatenation, segment cutting, frame splitting, and timestamp CSV generation:
+Required Python packages for video concatenation, segment cutting, frame splitting, and timestamp CSV generation:
 
 ```text
 av
 click
 numpy
 opencv-python
+psutil
 pydantic
 python-ffmpeg
 tqdm
 winfiletime
 ```
 
-Additional uv run python packages for camera calibration utilities:
+Additional Python packages for camera calibration utilities:
 
 ```text
 PyYAML
 scipy
+```
+
+`pyproject.toml` additionally declares the packages used only by the optional scripts:
+
+```text
+dearpygui                camera_calibration/show_saved_detections.py
+fastplotlib, glfw        camera_calibration/show_calib_v2.py (glfw is the desktop window backend)
+typer                    camera_calibration/detect_checkerboard.py, show_saved_detections.py
+matplotlib               sync_by_audio.py
+pandas                   extract_audio_from_midge.py
+pillow                   add_black_border_to_imgs.py
 ```
 
 Required system tools:
@@ -622,6 +661,7 @@ Required system tools:
 ```text
 ffmpeg
 ffprobe
+untrunc   # only for fix_gopro_battery_dies_video.py
 ```
 
 Note: the scripts import modules as `video_postprocess.<module>`. Keep the package import path configured the same way as the current project does, or update those imports to match the directory name if you run the folder standalone.
