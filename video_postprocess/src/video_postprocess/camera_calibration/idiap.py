@@ -32,11 +32,16 @@ def save_intrinsic_idiap(
 
         k1 = intrinsic["k1"]["val"]
         k2 = intrinsic["k2"]["val"]
-        p1 = intrinsic["p1"]["val"]
-        p2 = intrinsic["p2"]["val"]
         k3 = intrinsic["k3"]["val"]
 
-        idiap_data["distortion_coefficients"] = [k1, k2, p1, p2, k3]
+        if "k4" in intrinsic:
+            # Fisheye model, coefficients as used by cv2.fisheye
+            k4 = intrinsic["k4"]["val"]
+            idiap_data["distortion_coefficients"] = [k1, k2, k3, k4]
+        else:
+            p1 = intrinsic["p1"]["val"]
+            p2 = intrinsic["p2"]["val"]
+            idiap_data["distortion_coefficients"] = [k1, k2, p1, p2, k3]
 
         with intri_file.open(mode="w") as f:
             pretty_json_str = pprint.pformat(
