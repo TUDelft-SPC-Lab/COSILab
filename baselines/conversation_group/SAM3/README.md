@@ -6,6 +6,20 @@ https://github.com/gaomingqi/sam-body4d
 
 Refer to the upstream repository for the original installation guide, model details, citation, and general SAM-Body4D usage. The notes below only document the INGroup mask-generation workflow added in this project.
 
+## Environment and Config
+
+Dependencies are declared in two places, as upstream: `pyproject.toml` (the `sam-body4d` project, which packages `models/`) and `models/sam3/pyproject.toml` (the vendored SAM-3 package: `timm`, `iopath`, `ftfy`, `huggingface_hub`, ...). PyTorch/torchvision are not listed in either and must be installed separately for your CUDA version. On the cluster everything comes from the Apptainer image, and the job puts `models/sam3` and the repository root on `PYTHONPATH` instead of installing them.
+
+`configs/body4d.yaml` is not tracked. Generate it and download the checkpoints with:
+
+```bash
+python scripts/setup.py --ckpt-root /path/to/checkpoints
+```
+
+This downloads `configs/config.template.yaml` from the upstream `gaomingqi/sam-body4d` release (overwriting the local copy), fills in `${CKPT_ROOT}`, and writes `configs/body4d.yaml`. The SAM-3 and SAM-3D-Body checkpoints are gated on Hugging Face, so request access first. Alternatively, copy `configs/config.template.yaml` to `configs/body4d.yaml` and replace `${CKPT_ROOT}` by hand.
+
+The job scripts below pass `--config configs/body4d.yaml`; `run_sam3_masklets_batch.py` resolves it against the working directory and then its own directory, so the generated file must exist in the checkout the job runs from.
+
 ## Generate Masks for INGroup
 
 The INGroup mask workflow runs SAM-3 masklet extraction over 10-second video segments, using the first-frame person bounding-box annotations for each segment.
@@ -14,7 +28,9 @@ Main entry points:
 
 - Slurm batch script: `job_scripts/masklets_batch_ingroup.sh`
 - Python runner called by the job: `run_sam3_masklets_batch.py`
-- SAM-Body4D config: `configs/body4d.yaml`
+- SAM-Body4D config: `configs/body4d.yaml` (generated, see above)
+
+`job_scripts/masklets_batch_delftblue.sh` is the equivalent wrapper for the Conflab layout (`/mnt/data/conflab/video_segs_20s/<NUM>`, invoked as `sbatch job_scripts/masklets_batch_delftblue.sh 428` or `-all 4`); see its header for its defaults.
 
 The Slurm script expects this cluster layout:
 

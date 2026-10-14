@@ -19,6 +19,9 @@ src/intention_inference/            the task: what to ask, of which clips
   audio.py                          speaker selection and conversation-floor mixing
   records.py                        one record -> the clip and audio on this filesystem
   prompt.py                         prompt config loading and template rendering
+  instruction_prompt.py             the run-wide instruction prompt file, and its per-mode checks
+  build_assignment.py               builds the balanced persona x clip assignment
+  build_sweep.py                    builds the prompt-variation sweep spec
   model_config.json                 weights, decoding parameters, frame policy
   modes/                            the task modes: what is asked, and what grounds it
     base.py                         the interface every mode implements
@@ -29,6 +32,11 @@ src/intention_inference/            the task: what to ask, of which clips
     prompt_pa.json                  PA's prompt (unchanged since before modes existed)
     prompt_fa.json                  FA's prompt, labels included
     prompt_sa.json                  stub, unwritten
+  runs/                             run selectors: which personas run, over which clips
+    single.py                       no persona, a contiguous manifest slice
+    assignment.py                   --assignment-json (balanced design)
+    spec.py                         --task-spec (externally authored spec)
+    planning.py                     packs persona runs into Slurm jobs for persona.sh
   __main__.py                       entry point for `python -m intention_inference`
 src/models/                         the model backends the task runs on
   base.py                           the interface every backend implements
@@ -44,8 +52,13 @@ job_scripts/
     cosilab_daic.sh                 one Slurm job WITHOUT personas
     persona.sh                      multi-job launcher WITH personas
     build_assignment_daic.sh        builds an optional balanced assignment
+    build_sweep_daic.sh             builds and submits the prompt-variation sweep for one model
   lib/intention_paths.sh            data, manifest and output paths
   lib/model_backends.sh             backend -> container image
+apptainer/
+  qwen2.5-omni-inference.def        the Qwen2.5-Omni image (transformers 4.54.0)
+  probe_qwen25_vision.py            vision-memory scaling probe
+  probe_qwen25_vision_daic.sh       Slurm wrapper for the probe
 ```
 
 No model code and no weights live in this repo. `models/` holds thin wrappers
@@ -96,6 +109,8 @@ Each mode ships its own prompt config, and `--prompt-config` overrides it. A pro
 
 - `system_prompt`: the system instruction, folded into the user text
 - `user_prompt_template`: the actual intention-recognition prompt
+
+On top of that, every run reads an **instruction prompt**: a plain text file holding one whole `user_prompt_template`, which replaces that key in every prompt config the run resolves (the mode's own, a `--prompt-config`, and any per-task config in a `--task-spec`). It is the axis varied by the prompt-variation sweep. `--instruction-prompt PATH` selects the file; its default is the DAIC baseline `/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/prompt_structure_and_phrasing_variants/prompt_original_revised.txt`, and a missing file is an error at startup. `--no-instruction-prompt` skips the replacement and uses the prompt config's own template. Under `fa`, a prompt that carries PA's `<image>`/`<audio1>`/`<audio2>` markers or describes an aggregated track is refused (see `instruction_prompt.py`), and only the closing block is replaced -- the other `fa` fragments keep `prompt_fa.json`'s wording.
 
 If `user_prompt_template` (or `prompt`) is absent, the loader assembles the template from structured `intro`, `questions`, and `examples` fields. Templates are rendered with the record's flattened fields, so `{field}` and `{nested.field}` placeholders are filled from the record, `{record_json}` expands to the whole record, and unknown placeholders are left untouched.
 
@@ -176,11 +191,13 @@ Every fragment above is a key in `prompt_fa.json` -- `video_intro`, `poa_audio_i
 
 Note that `{conversation_floor}` does **not** render in any mode: it is a list, and the template flattener keeps only scalars -- which is why `fa` supplies the group as text itself.
 
-The aggregated conversation-floor mixes are written next to the output file, under:
+The aggregated conversation-floor mixes are cached next to the output, keyed on the input manifest rather than the output name so runs over different index ranges share one cache:
 
 ```text
-<output_dir>/_audio_mixes/<output_stem>/<index>_<record_id>_conversation_floor.wav
+<output_dir>/_audio_mixes/<manifest_stem>/<index:06d>_<record_id>_conversation_floor.wav
 ```
+
+For persona runs (`--assignment-json` / `--task-spec`) the cache sits under `--persona-output-dir` instead, and `--audio-mix-dir` overrides the location in either case.
 
 Floor tracks whose length differs from the participant track by more than the tolerance are discarded with a warning; if nothing remains, silence is used. The mix is peak-normalized when it clips.
 
@@ -205,8 +222,11 @@ uv run intention-inference \
   --video-media-path-prefix "https://example/video_segs" \
   --video-local-path-prefix /path/to/annotation_video \
   --audio-media-path-prefix "https://example/audio_segs_normalized" \
-  --audio-local-path-prefix /path/to/annotation_audio
+  --audio-local-path-prefix /path/to/annotation_audio \
+  --instruction-prompt /path/to/prompt_original_revised.txt
 ```
+
+Off DAIC, pass `--instruction-prompt` (or `--no-instruction-prompt`): the default instruction prompt is a DAIC path, and the run stops at startup if it does not exist.
 
 `--backend`, `--mode` and `--input-json` are required. Neither `--backend` nor `--mode` is defaulted: between them they decide which weights ran and what was asked, so a run should never be attributed to a model or a question chosen by omission.
 
@@ -232,7 +252,17 @@ Selection and filtering:
 Prompting:
 
 - `--system-prompt`: override the system prompt from the prompt config.
+- `--instruction-prompt PATH` / `--no-instruction-prompt`: the run-wide question, see above.
 - `--no-audio`: omit audio inputs and run video-only inference (no conversation-floor mixing).
+
+Personas and repeated answers:
+
+- `--assignment-json PATH` with one or more `--persona-prompt persona_XXXX.txt`: run each persona over the clips the balanced assignment (from `build_assignment.py`) gives it. Each persona is written to `persona_XXXX.json` under `--persona-output-dir`.
+- `--task-spec PATH`: run an externally authored persona x clip spec (`runs/spec.py`), writing `<task_id>.json` under `--persona-output-dir`. `--task-range X-Y` runs a 1-based, inclusive slice of its tasks.
+- Both persona selectors exclude `--start-index` / `--end-index` / `--limit`. In practice they are launched through `persona.sh` rather than by hand.
+- `--trials N`: generate `N` answers per clip from the same turn; only meaningful with sampling enabled in `model_config.json`.
+- `--overwrite`: rerun runs whose output file already exists instead of skipping them.
+- `--audio-mix-dir`: directory for the cached conversation-floor mixes.
 
 Model and generation live in `model_config.json`, not on the command line:
 
@@ -251,13 +281,14 @@ An absolute `model_id` that is not a directory fails the startup check before th
 ## Submit on DAIC
 
 There are two inference entry points, each with one behavior. The assignment
-builder is a separate setup utility.
+builder and the sweep launcher are separate utilities on top of them.
 
 ```text
 job_scripts/intention/
   cosilab_daic.sh           one Slurm job WITHOUT personas
   persona.sh                multi-job launcher WITH personas
   build_assignment_daic.sh  optional balanced-design builder
+  build_sweep_daic.sh       prompt-variation sweep for one model
 ```
 
 **`cosilab_daic.sh` — no personas.** Submit one inclusive manifest range as one
@@ -313,6 +344,16 @@ bash   job_scripts/intention/build_assignment_daic.sh --mode pa --explain 2
 ```
 
 `--explain N` prints where the first N candidate clips' media was looked for, then exits without building. Reach for it when validation rejects everything: the usual cause is a media/local prefix pair that stopped matching the manifest, which leaves the raw URL in place, so every clip looks missing when only a flag is wrong.
+
+**`build_sweep_daic.sh` — the prompt-variation sweep.** Run with `bash` on the login node; dry run by default, `--submit` queues the jobs. It builds the sweep spec with `build_sweep.py` and submits one job per instruction prompt for one model:
+
+```bash
+bash job_scripts/intention/build_sweep_daic.sh --model qwen7b
+bash job_scripts/intention/build_sweep_daic.sh --model qwen7b --submit
+bash job_scripts/intention/build_sweep_daic.sh --model gemma --seed 2 --submit
+```
+
+The design is fixed in `build_sweep.py`: 5 clips x 5 personas x 6 instruction prompts (the files under `prompt_structure_and_phrasing_variants/`) x 50 trials = 7,500 answers per model, as 6 jobs. The spec is derived from `--seed`, so every model run at the same seed reuses the same spec, and a rebuild that disagrees is refused. Only `pa` is supported, since the instruction prompts are written for it.
 
 Run any script with `--help` for its full option list.
 
