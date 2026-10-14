@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+results*/
+logs/
+prepared-data/
+data/
+*.npz
+*.npy
+*.pt
+*.pth
+*.joblib
+*.pkl
+*.wav
+*.mp4
+*.sif

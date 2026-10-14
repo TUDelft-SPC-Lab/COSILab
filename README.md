@@ -44,10 +44,12 @@ Model baselines and downstream feature-generation code.
 - `conversation_group/ViTPose`: ViTPose finetuning, SAM3-bbox-based keypoint inference, and conversion of keypoint JSON to dataframe PKL.
 - `conversation_group/graphff`: conversation-group (F-formation) detection benchmark on the Mingling cameras, with LSTM/GraphFF and DANTE pipelines and a cross-camera evaluation matrix.
 - `intention`: multimodal intention-recognition inference (backend- and mode-selectable, with persona and prompt-variation runs), pre-annotation survey analysis, and model-vs-human annotation similarity comparison.
+- `topic_transition_detection`: logistic regression, focal-person TCN and group TCN-DeepSets baselines for attempt detection and successful-transition classification from prepared pose/accelerometer windows.
 - SAM3 details: [baselines/conversation_group/SAM3/README.md](baselines/conversation_group/SAM3/README.md)
 - ViTPose details: [baselines/conversation_group/ViTPose/README.md](baselines/conversation_group/ViTPose/README.md)
 - GraphFF/DANTE details: [baselines/conversation_group/graphff/README.md](baselines/conversation_group/graphff/README.md)
 - Intention details: [baselines/intention/README.md](baselines/intention/README.md)
+- Topic transition detection details: [baselines/topic_transition_detection/README.md](baselines/topic_transition_detection/README.md)
 
 ## Environments
 
@@ -61,13 +63,14 @@ There is no repository-wide environment; each component declares its own depende
 | `baselines/conversation_group/ViTPose` | upstream ViTPose `requirements/` and `setup.py` |
 | `baselines/conversation_group/graphff` | Apptainer image `apptainer/deep_fformation.def`, or `environment-lstm-local.yml` for the LSTM pipeline |
 | `baselines/intention` | `pyproject.toml` + `uv.lock` (`uv sync`); per-backend Apptainer images on the cluster. The notebooks and R scripts have their own dependencies |
+| `baselines/topic_transition_detection` | `requirements.txt`; `requirements-tcn.txt` additionally installs PyTorch for the TCN baselines |
 
 ## Typical Flow
 
 1. Decode and synchronise badge sensor data with `BadgeFramework` (see `midge_postprocess`).
 2. Merge/cut videos and prepare camera calibration with `video_postprocess`.
 3. Run audio/transcript redaction or mingling main-speaker pseudonymization with `audio_postprocess` when preparing release-safe audio-derived text.
-4. Generate masks with SAM3, run ViTPose, benchmark conversation-group detection with GraphFF/DANTE, run intention inference, and compare model outputs with human annotations under `baselines`.
+4. Generate masks with SAM3, run ViTPose, benchmark conversation-group detection with GraphFF/DANTE, run intention inference, compare model outputs with human annotations, and evaluate topic transition detection from prepared windows under `baselines`.
 
 Refer to the component READMEs for exact commands, expected folder layouts, and cluster-specific paths.
 

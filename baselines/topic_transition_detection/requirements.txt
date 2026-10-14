@@ -1,0 +1,8 @@
+# Versions recorded in all six completed V2 task/horizon result matrices.
+# Python 3.12.3 was used for those runs; the code requires Python >= 3.10.
+numpy==2.2.6
+pandas==2.3.3
+scikit-learn==1.7.2
+# Direct dependency used to save LR checkpoints; sklearn also depends on it.
+joblib==1.5.1
+scipy==1.15.3

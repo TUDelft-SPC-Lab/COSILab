@@ -1,0 +1,92 @@
+{
+  "acc_max_age_seconds": 0.025,
+  "acc_min_samples": 2,
+  "accelerometer_date": "2025-07-17",
+  "accelerometer_root": "midge/midge_decoded_no_audio",
+  "auprc_definition": "sklearn.metrics.average_precision_score; non-interpolated step integration",
+  "badge_map": "conversation_group/participant_id_badge_association_table.csv",
+  "cameras": {
+    "mingling1": [
+      "cam06",
+      "cam08",
+      "cam10"
+    ],
+    "mingling2": [
+      "cam01",
+      "cam03",
+      "cam05"
+    ]
+  },
+  "folds": 5,
+  "lr": {
+    "C_grid": [
+      0.1,
+      1.0,
+      10.0
+    ],
+    "max_iter": 3000
+  },
+  "negative_types": [
+    "failure",
+    "ordinary"
+  ],
+  "ordinary_min_separation_seconds": 1.0,
+  "ordinary_per_attempt_target": 2,
+  "parent_protocol": "B3-v2-Stage2v3-pre2-post10-labels-windows-and-model-policy",
+  "phase_bins": [
+    "pre_far",
+    "pre_near",
+    "expression_first",
+    "expression_second",
+    "response_0_2",
+    "response_2_5",
+    "response_5_10"
+  ],
+  "positive_types": [
+    "success"
+  ],
+  "protocol_version": "B3-v2-Stage2v3-dual-balanced5-pre2-post10",
+  "sampling_seed": 20260928,
+  "selection_metric": "average_precision",
+  "source_label_policy": "V2 Stage1 v3 + Stage2 v3; definite valid SUCCESS/FAILURE; screened Stage1 NONE",
+  "split_policy": "session_balanced_participant_set_v1",
+  "split_search_trials": 3000,
+  "split_seed": 20260927,
+  "standard_deviation_ddof": 1,
+  "task_name": "successful_transition",
+  "tcn": {
+    "batch_size": 16,
+    "dilations": {
+      "acc": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ],
+      "kp": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64
+      ]
+    },
+    "dropout": 0.2,
+    "gradient_clip": 1.0,
+    "hidden": 16,
+    "kernel_size": 3,
+    "learning_rate": 0.001,
+    "max_epochs": 80,
+    "patience": 10,
+    "weight_decay": 0.0001
+  },
+  "training_seed": 13,
+  "window": {
+    "kind": "expression_to_anchor_end",
+    "post_seconds": 10.0,
+    "pre_seconds": 2.0
+  }
+}
