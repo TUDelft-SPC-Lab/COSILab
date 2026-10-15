@@ -58,6 +58,8 @@ Usage:
 
 import json
 import os
+import shutil
+import tempfile
 import warnings
 from argparse import ArgumentParser
 
@@ -134,8 +136,10 @@ def main():
         dataset_info = DatasetInfo(dataset_info)
 
     # --- Temp video path (write locally, then move to avoid NFS corruption) ---
-    # Use PID to avoid collisions when multiple jobs share the same /tmp
-    tmp_video_path = os.path.join('/tmp', f'vitpose_kp_tmp_{os.getpid()}.mp4')
+    # Created lazily via mkstemp. Don't key it on os.getpid(): under
+    # `apptainer --containall` every job gets its own PID namespace, so
+    # concurrent jobs sharing the host /tmp see the same small PID and collide.
+    tmp_video_path = None
 
     # --- Video writer (lazy init on first frame) ---
     video_writer = None
@@ -209,6 +213,9 @@ def main():
                     vis_img = cv2.imread(img_path)
 
                 if video_writer is None:
+                    fd, tmp_video_path = tempfile.mkstemp(
+                        prefix='vitpose_kp_tmp_', suffix='.mp4', dir='/tmp')
+                    os.close(fd)
                     h, w = vis_img.shape[:2]
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                     video_writer = cv2.VideoWriter(
@@ -221,7 +228,6 @@ def main():
         if video_writer is not None:
             video_writer.release()
             # Keep the raw OpenCV mp4v output and copy it to out-dir.
-            import shutil
             shutil.copyfile(tmp_video_path, out_video_path)
             os.remove(tmp_video_path)
             print(f'Saved raw video to {out_video_path}')
