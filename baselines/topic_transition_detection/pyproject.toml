@@ -1,0 +1,41 @@
+[project]
+name = "topic-transition-detection"
+version = "0.1.0"
+description = "Topic transition detection baselines (LR, TCN, TCN-DeepSets) for COSILab"
+readme = "README.md"
+authors = [
+    { name = "Zonghuan Li", email = "z.li-25@tudelft.nl" }
+]
+# Reference runs used Python 3.12.3 (see .python-version); the code needs >= 3.10.
+requires-python = ">=3.10"
+# Versions recorded in all six completed V2 task/horizon result matrices.
+dependencies = [
+    "numpy==2.2.6",
+    "pandas==2.3.3",
+    "scikit-learn==1.7.2",
+    # Direct dependency used to save LR checkpoints; sklearn also depends on it.
+    "joblib==1.5.1",
+    "scipy==1.15.3",
+]
+
+[dependency-groups]
+# Only the TCN baselines need PyTorch: `uv sync --group tcn`.
+# Reference runs used torch 2.10.0+cu128.
+tcn = ["torch==2.10.0"]
+
+# Not an installable package: train.py hashes run.py and topic_transition/*.py by
+# their paths relative to this folder, and `run.py --resume` checks that hash
+# against existing results. Moving the code into src/ would invalidate them, so
+# the scripts run in place with `uv run python run.py ...`.
+[tool.uv]
+package = false
+
+# CUDA 12.8 wheels on Linux to match the reference runs; PyPI elsewhere (CPU on
+# Windows, CPU/MPS on macOS). Change the index URL to pick another CUDA build.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

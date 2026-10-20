@@ -10,8 +10,9 @@ COSILab/
     topic_transition_detection/
       README.md
       run.py
-      requirements.txt
-      requirements-tcn.txt
+      pyproject.toml          # uv project: pinned dependencies
+      uv.lock
+      .python-version
       configs/                # six task/horizon configurations
       topic_transition/       # data loading, split audits, models and evaluation
 ```
@@ -37,22 +38,24 @@ Five folds use participant-set groups within Mingling sessions. Splits are parti
 
 ## Installation
 
-Use Python 3.10 or newer. Reference runs used Python 3.12.3 and the scientific package versions pinned here.
+The folder is a [uv](https://docs.astral.sh/uv/) project. Dependencies are pinned in `pyproject.toml` and locked in `uv.lock`. Python 3.10 or newer is required. Reference runs used Python 3.12.3, and `.python-version` asks uv for 3.12.
 
 ```bash
 cd COSILab/baselines/topic_transition_detection
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+uv sync                 # LR baseline
+uv sync --group tcn     # also installs PyTorch for the TCN baselines
 ```
 
-For either TCN baseline, also install PyTorch:
+Reference runs used PyTorch 2.10.0+cu128. On Linux, the `tcn` group installs CUDA 12.8 wheels from the PyTorch index. On other platforms it installs the PyPI build (CPU on Windows, CPU/MPS on macOS). For a different CUDA build, change the `pytorch-cu128` index URL in `pyproject.toml` and run `uv lock`. The runner defaults to CPU; `--device cuda` requests GPU execution. On a managed cluster, use a scheduler allocation.
+
+Without uv, export the locked versions and install them with pip:
 
 ```bash
-python -m pip install -r requirements-tcn.txt
+uv export --group tcn --no-hashes --no-emit-project -o requirements.txt
+python -m pip install -r requirements.txt \n  --extra-index-url https://download.pytorch.org/whl/cu128   # Linux: torch+cu128
 ```
 
-Reference runs used PyTorch 2.10.0+cu128. Select the CPU/CUDA build appropriate for your machine. The runner defaults to CPU; `--device cuda` requests GPU execution. On a managed cluster, use a scheduler allocation.
+The commands below use `uv run`, which runs them in the project environment. With an activated `.venv`, `python run.py ...` works as well.
 
 ## External reference data
 
@@ -84,18 +87,18 @@ The configs also retain preparation fields such as `accelerometer_root`, `badge_
 
 ## Plan and validate
 
-The run plan can be inspected without data or scientific dependencies:
+The run plan can be inspected without data:
 
 ```bash
-python run.py plan --horizons 10 2 5
+uv run python run.py plan --horizons 10 2 5
 ```
 
 Check supplied metadata without reading sensor arrays, then optionally validate the complete data:
 
 ```bash
-python run.py validate --data-root /path/to/prepared-data \
+uv run python run.py validate --data-root /path/to/prepared-data \
   --metadata-only --horizons 10 2 5
-python run.py validate --data-root /path/to/prepared-data \
+uv run python run.py validate --data-root /path/to/prepared-data \
   --horizons 10 2 5
 ```
 
@@ -104,7 +107,7 @@ python run.py validate --data-root /path/to/prepared-data \
 Run one LR condition to check the environment:
 
 ```bash
-python run.py run --data-root /path/to/prepared-data \
+uv run python run.py run --data-root /path/to/prepared-data \
   --results-root results_check --horizons 10 \
   --tasks attempt_detection --models lr --modalities kp --folds 0
 ```
@@ -112,14 +115,14 @@ python run.py run --data-root /path/to/prepared-data \
 Run the full +10s experiment (90 fold conditions):
 
 ```bash
-python run.py run --data-root /path/to/prepared-data \
+uv run python run.py run --data-root /path/to/prepared-data \
   --results-root results --horizons 10 --device cuda --threads 4
 ```
 
 Run the +2s and +5s comparison (180 more conditions):
 
 ```bash
-python run.py run --data-root /path/to/prepared-data \
+uv run python run.py run --data-root /path/to/prepared-data \
   --results-root results --horizons 2 5 --device cuda --threads 4
 ```
 
@@ -130,7 +133,7 @@ Use `--horizons 10 2 5` for all 270 conditions, or select individual tasks, mode
 Outputs are placed under `results/post{2,5,10}/{task}/{model}/{modality}/fold_{0..4}/`. Each run records its configuration, selected hyperparameters, checkpoint, test probabilities and metrics. Full 45-run task/horizon matrices are summarized automatically. Summaries can also be regenerated:
 
 ```bash
-python run.py summarize --data-root /path/to/prepared-data \
+uv run python run.py summarize --data-root /path/to/prepared-data \
   --results-root results --horizons 10 2 5
 ```
 
