@@ -65,6 +65,15 @@ There is no repository-wide environment; each component declares its own depende
 | `baselines/intention` | `pyproject.toml` + `uv.lock` (`uv sync`); per-backend Apptainer images on the cluster. The notebooks and R scripts have their own dependencies |
 | `baselines/topic_transition_detection` | `requirements.txt`; `requirements-tcn.txt` additionally installs PyTorch for the TCN baselines |
 
+### analysis/topic_composition
+
+Code MVP for the Figure 4A descriptive topic-composition analysis. It reads the
+external `processed/benchmark_tasks/topic_composition` dataset package,
+reproduces the T1–T8 distributions by session and group size, validates the paper
+reference table, and optionally generates the heatmap.
+
+- Details: [analysis/topic_composition/README.md](analysis/topic_composition/README.md)
+
 ## Typical Flow
 
 1. Decode and synchronise badge sensor data with `BadgeFramework` (see `midge_postprocess`).

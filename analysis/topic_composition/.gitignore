@@ -1,0 +1,12 @@
+# External dataset inputs and locally generated products
+/data/
+/reference/
+/output/
+/outputs/
+/results/
+/logs/
+/cache/
+/models/
+/source_data/
+__pycache__/
+*.py[cod]

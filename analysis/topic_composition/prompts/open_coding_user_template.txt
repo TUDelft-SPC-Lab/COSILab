@@ -1,0 +1,44 @@
+Analyze the following transcript window.
+
+Return valid JSON with this schema:
+
+{{
+  "topic_areas": [
+    {{
+      "topic_id": "T1",
+      "topic_label": "broad emergent topic label",
+      "topic_summary": "one concise sentence about what this topic covers",
+      "evidence_turn_indices": [1, 2],
+      "estimated_turn_share": 0.0
+    }}
+  ]
+}}
+
+Rules:
+- Use only the visible transcript lines.
+- Use parent-segment turn indices exactly as shown.
+- `topic_areas` should contain broad, data-grounded emergent topic areas.
+- Use `estimated_turn_share` as an approximate 0-1 share of visible talk.
+- For `evidence_turn_indices`, include only 2-3 representative turn indices per topic.
+- Do not list every turn covered by a topic.
+- Keep labels broad enough for distribution analysis but grounded in this window.
+- Prefer merging over splitting.
+- Do not detect candidate attempts.
+- Do not judge uptake.
+- Do not use a predefined taxonomy.
+- If no coherent topic can be identified, return `"topic_areas": []`.
+- Output JSON only.
+
+Parent/window metadata:
+- parent_segment_id: {episode_id}
+- section: {section}
+- window_id: {window_id}
+- turn_index_base: parent_segment
+- window turn span: {window_start_turn_index}-{window_end_turn_index}
+- participants: {participants}
+- parent segment turn count: {segment_turn_count}
+- visible window: {excerpt_selection_note}
+- visible time span: {start_clock} to {end_clock}
+
+Transcript excerpt:
+{transcript}
