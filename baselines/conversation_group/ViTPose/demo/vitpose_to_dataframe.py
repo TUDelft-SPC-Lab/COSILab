@@ -131,7 +131,7 @@ FRAMES_PER_SEG = 600       # each raw video segment is 10 s at 60 fps (210 segs 
 # Root directory holding cam<XX>/cam<XX>_seg<YYY>_frame0.jpg preview images.
 FRAMES_ROOT_DEFAULT = Path(
     "/tudelft.net/staff-umbrella/neon/cosilab_project/"
-    "B2_pipeline/video_segs_raw"
+    "data_temp/B2_pipeline/video_segs_raw"
 )
 
 # How often (in frames) to render diagnostic plots when --plot_dir is set.
@@ -1102,7 +1102,7 @@ def parse_args():
             "Directory containing mingle_1_groups.csv (cam 6-10) and/or "
             "mingle_2_groups.csv (cam 1-5) with GT conversational groups. "
             "Default on DAIC: /tudelft.net/staff-umbrella/neon/cosilab_project/"
-            "B2_pipeline/cgroup_annotation/"
+            "data_temp/B2_pipeline/cgroup_annotation/"
         ),
     )
     parser.add_argument(

@@ -28,7 +28,7 @@ POSE_CKPT="${POSE_CKPT:-${NEON}/code/ViTPose/work_dirs/ViTPose_coco_plus_conflab
 #   BATCH=228 sbatch slurm/submit_infer_daic.sh
 # ---------------------------------------------------------------------------
 BATCH="${BATCH:-228}"
-DATA_ROOT="${DATA_ROOT:-${NEON}/cosilab_project/B2_pipeline/sam3_output/${BATCH}}"
+DATA_ROOT="${DATA_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/sam3_output/${BATCH}}"
 
 if [[ ! -d "${DATA_ROOT}" ]]; then
     echo "Error: DATA_ROOT not found: ${DATA_ROOT}" >&2
@@ -39,7 +39,7 @@ SIF="${SIF:-${NEON}/apptainer/vitpose-0.0.5.sif}"
 
 # Output written directly to home directory
 # OUT_DIR=/home/nfs/svacanas/outputs/vitpose/${BATCH}
-OUT_DIR=${NEON}/cosilab_project/B2_pipeline/vitpose_results/${BATCH}
+OUT_DIR=${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_results/${BATCH}
 mkdir -p ${OUT_DIR}
 
 # Unzip images to /tmp — zip contains flat jpgs (no images/ subfolder)
