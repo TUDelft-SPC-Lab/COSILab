@@ -41,9 +41,10 @@ the 2D keypoints with per-camera intrinsic/extrinsic calibration loaded from:
 
     <intrinsics_root>/
         parameters-camera-XX.json      (libCalib calibrator export)
-    <camera_params_root>/
-        camera_XX/
-            extrinsic.json
+    <extrinsics_root>/
+        <any subfolder>/
+            parameters-camera-AA-to-BB.json   (libCalib multi-camera export,
+                                               cameras AA..BB in order)
 """
 
 from __future__ import annotations
@@ -61,15 +62,15 @@ import pandas as pd
 
 BODY_HEIGHT = 1.7
 CONF_THRESHOLD = 0.0
-CAMERA_PARAMS_ROOT = Path(
-    "/tudelft.net/staff-umbrella/neon/cosilab_project/processed_data/"
-    "gopro_data/camera_calibration/camera_params"
-)
-# Directory holding one libCalib export per camera: parameters-camera-XX.json
-INTRINSICS_ROOT = Path(
+CALIBRATION_PARAMS_ROOT = Path(
     "/tudelft.net/staff-umbrella/neon/cosilab_project/4TU_upload/processed/"
-    "videos/camera_calibration/calibration_params/intrinsics"
+    "videos/camera_calibration/calibration_params"
 )
+# Searched one level deep for parameters-camera-AA-to-BB.json, e.g.
+# "mingling_1_top_Extrinsic Parameters/parameters-camera-06-to-10.json".
+EXTRINSICS_ROOT = CALIBRATION_PARAMS_ROOT
+# Directory holding one libCalib export per camera: parameters-camera-XX.json
+INTRINSICS_ROOT = CALIBRATION_PARAMS_ROOT / "intrinsics"
 
 # --- Resolution bookkeeping ---------------------------------------------- #
 # The ViTPose JSONs store keypoints in the resolution that was actually fed to
@@ -447,35 +448,104 @@ def load_libcalib_intrinsics(intrinsic_path: str | Path) -> tuple[str, np.ndarra
     return model, K, D
 
 
+_EXTRINSICS_FILE_RE = re.compile(r"^parameters-camera-(\d+)-to-(\d+)\.json$")
+_extrinsics_cache: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {}
+
+
+def load_libcalib_extrinsics(
+    extrinsics_root: str | Path = EXTRINSICS_ROOT,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Map camera id -> (rvec, tvec) from libCalib multi-camera exports.
+
+    Every ``<extrinsics_root>/*/parameters-camera-AA-to-BB.json`` holds
+    ``Calibration.cameras[i].transform`` for cameras AA..BB in order, with
+    ``rotation.{rx,ry,rz}`` (Rodrigues, radians) and ``translation.{x,y,z}``
+    (metres). They are used as OpenCV world -> camera extrinsics.
+    """
+    root_key = str(Path(extrinsics_root))
+    if root_key in _extrinsics_cache:
+        return _extrinsics_cache[root_key]
+
+    extrinsics: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for path in sorted(Path(extrinsics_root).glob("*/parameters-camera-*-to-*.json")):
+        match = _EXTRINSICS_FILE_RE.match(path.name)
+        if match is None:
+            continue
+        first, last = int(match.group(1)), int(match.group(2))
+        with open(path) as f:
+            data = json.load(f)
+        calib = data["Calibration"] if "Calibration" in data else data["calibration"]
+        cameras = calib["cameras"]
+        if len(cameras) != last - first + 1:
+            raise ValueError(
+                f"{path} holds {len(cameras)} cameras, but its name implies "
+                f"{last - first + 1} (cameras {first:02d}-{last:02d})."
+            )
+        for offset, camera in enumerate(cameras):
+            rot = camera["transform"]["rotation"]
+            trans = camera["transform"]["translation"]
+            rvec = np.array([[rot["rx"]], [rot["ry"]], [rot["rz"]]], dtype=np.float64)
+            tvec = np.array([[trans["x"]], [trans["y"]], [trans["z"]]], dtype=np.float64)
+            extrinsics[str(first + offset).zfill(2)] = (rvec, tvec)
+
+    _extrinsics_cache[root_key] = extrinsics
+    return extrinsics
+
+
+def check_extrinsics_floor_frame(cam_id: str, rvec: np.ndarray, tvec: np.ndarray) -> None:
+    """Warn when the extrinsics do not look like a floor frame (z up, z=0 floor).
+
+    Back-projection intersects rays with horizontal planes at keypoint
+    heights, so the camera must sit above the floor and look down.
+    """
+    R, _ = cv2.Rodrigues(rvec)
+    center = -(R.T @ tvec.reshape(3))
+    optical_axis = R.T @ np.array([0.0, 0.0, 1.0])
+    if center[2] <= BODY_HEIGHT or optical_axis[2] >= 0.0:
+        print(
+            f"  Warning: cam{cam_id} extrinsics put the camera at "
+            f"({center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f}) looking along "
+            f"({optical_axis[0]:.2f}, {optical_axis[1]:.2f}, {optical_axis[2]:.2f}). "
+            "Expected a camera above the floor (z > body height, in metres) "
+            "looking down (axis z < 0); world x/y will be wrong otherwise."
+        )
+
+
 def load_camera_params(
     cam_number: str | int,
-    camera_params_root: str | Path = CAMERA_PARAMS_ROOT,
+    extrinsics_root: str | Path = EXTRINSICS_ROOT,
     intrinsics_root: str | Path = INTRINSICS_ROOT,
 ) -> dict:
     """Load per-camera intrinsics and extrinsics.
 
     Intrinsics come from ``<intrinsics_root>/parameters-camera-XX.json``
-    (libCalib export, see :func:`load_libcalib_intrinsics`); extrinsics come
-    from ``<camera_params_root>/camera_XX/extrinsic.json`` (``rvec``/``tvec``).
+    (see :func:`load_libcalib_intrinsics`); extrinsics come from the
+    multi-camera files under ``<extrinsics_root>`` (see
+    :func:`load_libcalib_extrinsics`).
     """
     cam_id = str(cam_number).zfill(2)
-    cache_key = (str(Path(camera_params_root)), str(Path(intrinsics_root)), cam_id)
+    cache_key = (str(Path(extrinsics_root)), str(Path(intrinsics_root)), cam_id)
     if cache_key in _camera_params_cache:
         return _camera_params_cache[cache_key]
 
     intrinsic_path = Path(intrinsics_root) / f"parameters-camera-{cam_id}.json"
-    extrinsic_path = Path(camera_params_root) / f"camera_{cam_id}" / "extrinsic.json"
-
     model, K, D = load_libcalib_intrinsics(intrinsic_path)
-    with open(extrinsic_path) as f:
-        extrinsic_data = json.load(f)
+
+    extrinsics = load_libcalib_extrinsics(extrinsics_root)
+    if cam_id not in extrinsics:
+        raise FileNotFoundError(
+            f"No extrinsics for cam{cam_id} under {extrinsics_root}; found "
+            f"cameras {sorted(extrinsics) or 'none'}."
+        )
+    rvec, tvec = extrinsics[cam_id]
+    check_extrinsics_floor_frame(cam_id, rvec, tvec)
 
     params = {
         "model": model,
         "K": K,
         "D": D,
-        "rvec": np.asarray(extrinsic_data["rvec"], dtype=np.float64).reshape(3, 1),
-        "tvec": np.asarray(extrinsic_data["tvec"], dtype=np.float64).reshape(3, 1),
+        "rvec": rvec,
+        "tvec": tvec,
     }
     _camera_params_cache[cache_key] = params
     return params
@@ -657,7 +727,7 @@ def process_person_keypoints(
 def process_vitpose_json(
     input_path: str | Path,
     cam_number: str | int,
-    camera_params_root: str | Path = CAMERA_PARAMS_ROOT,
+    extrinsics_root: str | Path = EXTRINSICS_ROOT,
     intrinsics_root: str | Path = INTRINSICS_ROOT,
     body_height: float = BODY_HEIGHT,
     conf_thresh: float = CONF_THRESHOLD,
@@ -689,7 +759,7 @@ def process_vitpose_json(
 
     camera_params = load_camera_params(
         cam_number,
-        camera_params_root=camera_params_root,
+        extrinsics_root=extrinsics_root,
         intrinsics_root=intrinsics_root,
     )
     K = camera_params["K"]
@@ -968,7 +1038,7 @@ def process_results_directory(
     output_dir: str | Path | None = None,
     output_name: str = "vitpose_dataframe.pkl",
     conf_thresh: float = CONF_THRESHOLD,
-    camera_params_root: str | Path = CAMERA_PARAMS_ROOT,
+    extrinsics_root: str | Path = EXTRINSICS_ROOT,
     intrinsics_root: str | Path = INTRINSICS_ROOT,
     body_height: float = BODY_HEIGHT,
     camera_numbers=None,
@@ -1046,7 +1116,7 @@ def process_results_directory(
         df, plot_samples = process_vitpose_json(
             json_file,
             cam_number=cam_number,
-            camera_params_root=camera_params_root,
+            extrinsics_root=extrinsics_root,
             intrinsics_root=intrinsics_root,
             body_height=body_height,
             conf_thresh=conf_thresh,
@@ -1076,7 +1146,7 @@ def process_results_directory(
 
             cam_params = load_camera_params(
                 cam_number,
-                camera_params_root=camera_params_root,
+                extrinsics_root=extrinsics_root,
                 intrinsics_root=intrinsics_root,
             )
             cam_world_xy = _camera_center_world_xy(
@@ -1142,9 +1212,9 @@ def parse_args():
         help="Assumed body height in meters for back-projection.",
     )
     parser.add_argument(
-        "--camera_params_root",
-        default=str(CAMERA_PARAMS_ROOT),
-        help="Root containing camera_XX/extrinsic.json.",
+        "--extrinsics_root",
+        default=str(EXTRINSICS_ROOT),
+        help="Root whose subfolders contain libCalib parameters-camera-AA-to-BB.json extrinsics.",
     )
     parser.add_argument(
         "--intrinsics_root",
@@ -1211,7 +1281,7 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         output_name=args.output_name,
         conf_thresh=args.conf_thresh,
-        camera_params_root=args.camera_params_root,
+        extrinsics_root=args.extrinsics_root,
         intrinsics_root=args.intrinsics_root,
         body_height=args.body_height,
         camera_numbers=args.camera_numbers,

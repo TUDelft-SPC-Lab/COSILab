@@ -19,9 +19,9 @@ The camera number is parsed from the folder name, for example `cam06_batch01 -> 
 ```text
 <intrinsics_root>/
   parameters-camera-06.json     # libCalib export (OpenCV fisheye)
-<camera_params_root>/
-  camera_06/
-    extrinsic.json
+<extrinsics_root>/
+  mingling_1_top_Extrinsic Parameters/
+    parameters-camera-06-to-10.json   # libCalib export, cameras 06..10 in order
 ```
 
 ## Output Layout
@@ -142,7 +142,7 @@ Convert all cameras:
 python demo/vitpose_to_dataframe.py \
   /path/to/vitpose_results \
   --output_dir /path/to/vitpose_dataframe \
-  --camera_params_root /path/to/camera_params \
+  --extrinsics_root /path/to/calibration_params \
   --intrinsics_root /path/to/intrinsics
 ```
 
@@ -152,7 +152,7 @@ Convert selected cameras:
 python demo/vitpose_to_dataframe.py \
   /path/to/vitpose_results \
   --output_dir /path/to/vitpose_dataframe \
-  --camera_params_root /path/to/camera_params \
+  --extrinsics_root /path/to/calibration_params \
   --intrinsics_root /path/to/intrinsics \
   --camera_numbers 06,08,10
 ```

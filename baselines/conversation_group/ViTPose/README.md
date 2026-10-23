@@ -256,7 +256,7 @@ Default paths in the conversion job:
 ```text
 RESULTS_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_results
 OUTPUT_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_dataframe
-CAMERA_PARAMS_ROOT=${NEON}/cosilab_project/processed_data/gopro_data/camera_calibration/camera_params
+EXTRINSICS_ROOT=${NEON}/cosilab_project/4TU_upload/processed/videos/camera_calibration/calibration_params
 INTRINSICS_ROOT=${NEON}/cosilab_project/4TU_upload/processed/videos/camera_calibration/calibration_params/intrinsics
 GT_GROUPS_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/cgroup_annotation
 PLOT_DIR=${NEON}/cosilab_project/data_temp/B2_pipeline/person_plotting
@@ -291,7 +291,7 @@ python demo/vitpose_to_dataframe.py \
   "${RESULTS_ROOT}" \
   --output_dir "${OUTPUT_ROOT}" \
   --output_name vitpose_dataframe.pkl \
-  --camera_params_root "${CAMERA_PARAMS_ROOT}" \
+  --extrinsics_root "${EXTRINSICS_ROOT}" \
   --intrinsics_root "${INTRINSICS_ROOT}" \
   --gt_groups_root "${GT_GROUPS_ROOT}" \
   --plot_dir "${PLOT_DIR}" \
@@ -328,10 +328,13 @@ The `x` and `y` coordinates are world-floor coordinates. The converter back-proj
 
 ```text
 <INTRINSICS_ROOT>/parameters-camera-XX.json
-<CAMERA_PARAMS_ROOT>/camera_XX/extrinsic.json
+<EXTRINSICS_ROOT>/mingling_1_top_Extrinsic Parameters/parameters-camera-06-to-10.json
+<EXTRINSICS_ROOT>/mingling_2_top_Extrinsic Parameters/parameters-camera-01-to-04.json
 ```
 
 `parameters-camera-XX.json` is a libCalib calibrator export with an OpenCV fisheye model (`libCalib::CameraModelOpenCVFisheye`); `f`, `ar`, `cx`, `cy`, `k1`–`k4` are read from `Calibration.cameras[0].model.ptr_wrapper.data.parameters`.
+
+Each `parameters-camera-AA-to-BB.json` is a libCalib multi-camera export: `Calibration.cameras[i]` is camera `AA + i`, and its `transform.rotation.{rx,ry,rz}` / `transform.translation.{x,y,z}` are used as OpenCV world-to-camera `rvec` / `tvec` in metres. The world frame must have the floor at z = 0 with z pointing up; the converter prints a warning for any camera that is not above the floor looking down.
 
 Diagnostic plots are written under:
 

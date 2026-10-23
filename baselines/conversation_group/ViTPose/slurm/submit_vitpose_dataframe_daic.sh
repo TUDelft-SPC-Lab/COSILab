@@ -22,8 +22,9 @@ SIF="${SIF:-${NEON}/apptainer/vitpose-0.0.5.sif}"
 RESULTS_ROOT="${RESULTS_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_results}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_dataframe}"
 
-CAMERA_PARAMS_ROOT="${CAMERA_PARAMS_ROOT:-${NEON}/cosilab_project/processed_data/gopro_data/camera_calibration/camera_params}"
-INTRINSICS_ROOT="${INTRINSICS_ROOT:-${NEON}/cosilab_project/4TU_upload/processed/videos/camera_calibration/calibration_params/intrinsics}"
+CALIBRATION_PARAMS_ROOT=${NEON}/cosilab_project/4TU_upload/processed/videos/camera_calibration/calibration_params
+EXTRINSICS_ROOT="${EXTRINSICS_ROOT:-${CALIBRATION_PARAMS_ROOT}}"
+INTRINSICS_ROOT="${INTRINSICS_ROOT:-${CALIBRATION_PARAMS_ROOT}/intrinsics}"
 CAMERA_NUMBERS="${CAMERA_NUMBERS:-}"
 GT_GROUPS_ROOT="${GT_GROUPS_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/cgroup_annotation}"
 PLOT_DIR="${PLOT_DIR:-${NEON}/cosilab_project/data_temp/B2_pipeline/person_plotting}"
@@ -61,8 +62,8 @@ fi
 
 mkdir -p "${OUTPUT_ROOT}"
 
-if [[ ! -d "${CAMERA_PARAMS_ROOT}" ]]; then
-    echo "Warning: CAMERA_PARAMS_ROOT not found: ${CAMERA_PARAMS_ROOT}" >&2
+if [[ ! -d "${EXTRINSICS_ROOT}" ]]; then
+    echo "Warning: EXTRINSICS_ROOT not found: ${EXTRINSICS_ROOT}" >&2
 fi
 
 if [[ ! -d "${INTRINSICS_ROOT}" ]]; then
@@ -72,7 +73,7 @@ fi
 echo "Submitting ViTPose dataframe conversion"
 echo "  results_root=${RESULTS_ROOT}"
 echo "  output_root=${OUTPUT_ROOT}"
-echo "  camera_params_root=${CAMERA_PARAMS_ROOT}"
+echo "  extrinsics_root=${EXTRINSICS_ROOT}"
 echo "  intrinsics_root=${INTRINSICS_ROOT}"
 echo "  gt_groups_root=${GT_GROUPS_ROOT}"
 echo "  plot_dir=${PLOT_DIR}"
@@ -85,7 +86,7 @@ python_args=(
     "${RESULTS_ROOT}"
     --output_dir "${OUTPUT_ROOT}"
     --output_name vitpose_dataframe.pkl
-    --camera_params_root "${CAMERA_PARAMS_ROOT}"
+    --extrinsics_root "${EXTRINSICS_ROOT}"
     --intrinsics_root "${INTRINSICS_ROOT}"
     --gt_groups_root "${GT_GROUPS_ROOT}"
     --plot_dir "${PLOT_DIR}"
@@ -119,7 +120,7 @@ echo "Dataframes written under ${OUTPUT_ROOT}"
 #    sbatch slurm/submit_vitpose_dataframe_daic.sh
 #
 # 3) Override camera params roots (extrinsics / libCalib intrinsics):
-#    CAMERA_PARAMS_ROOT=/path/to/camera_params \
+#    EXTRINSICS_ROOT=/path/to/calibration_params \
 #    INTRINSICS_ROOT=/path/to/intrinsics \
 #    sbatch slurm/submit_vitpose_dataframe_daic.sh
 # 
