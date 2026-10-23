@@ -266,7 +266,7 @@ FRAMES_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/video_segs_raw
 Submit conversion for all cameras found under `RESULTS_ROOT`:
 
 ```bash
-cd /home/nfs/zli33/projects/ViTPose
+cd /home/nfs/zli33/projects/COSILab/baselines/conversation_group/ViTPose
 sbatch slurm/submit_vitpose_dataframe_daic.sh
 ```
 

@@ -15,7 +15,8 @@ set -euo pipefail
 module use /opt/insy/modulefiles
 
 NEON=/tudelft.net/staff-umbrella/neon
-VITPOSE_DIR=/home/nfs/zli33/projects/ViTPose
+REPO_DIR="${REPO_DIR:-/home/nfs/zli33/projects/COSILab}"
+VITPOSE_DIR="${VITPOSE_DIR:-${REPO_DIR}/baselines/conversation_group/ViTPose}"
 SIF="${SIF:-${NEON}/apptainer/vitpose-0.0.5.sif}"
 
 RESULTS_ROOT="${RESULTS_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_results}"
