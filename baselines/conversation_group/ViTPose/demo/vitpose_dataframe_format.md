@@ -17,9 +17,10 @@ The converter scans one level of camera folders under `results_dir`:
 The camera number is parsed from the folder name, for example `cam06_batch01 -> 06`. Calibration is then loaded from:
 
 ```text
+<intrinsics_root>/
+  parameters-camera-06.json     # libCalib export (OpenCV fisheye)
 <camera_params_root>/
   camera_06/
-    intrinsic.json
     extrinsic.json
 ```
 
@@ -141,7 +142,8 @@ Convert all cameras:
 python demo/vitpose_to_dataframe.py \
   /path/to/vitpose_results \
   --output_dir /path/to/vitpose_dataframe \
-  --camera_params_root /path/to/camera_params
+  --camera_params_root /path/to/camera_params \
+  --intrinsics_root /path/to/intrinsics
 ```
 
 Convert selected cameras:
@@ -151,6 +153,7 @@ python demo/vitpose_to_dataframe.py \
   /path/to/vitpose_results \
   --output_dir /path/to/vitpose_dataframe \
   --camera_params_root /path/to/camera_params \
+  --intrinsics_root /path/to/intrinsics \
   --camera_numbers 06,08,10
 ```
 

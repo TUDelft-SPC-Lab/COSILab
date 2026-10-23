@@ -257,6 +257,7 @@ Default paths in the conversion job:
 RESULTS_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_results
 OUTPUT_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_dataframe
 CAMERA_PARAMS_ROOT=${NEON}/cosilab_project/processed_data/gopro_data/camera_calibration/camera_params
+INTRINSICS_ROOT=${NEON}/cosilab_project/4TU_upload/processed/videos/camera_calibration/calibration_params/intrinsics
 GT_GROUPS_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/cgroup_annotation
 PLOT_DIR=${NEON}/cosilab_project/data_temp/B2_pipeline/person_plotting
 FRAMES_ROOT=${NEON}/cosilab_project/data_temp/B2_pipeline/video_segs_raw
@@ -291,6 +292,7 @@ python demo/vitpose_to_dataframe.py \
   --output_dir "${OUTPUT_ROOT}" \
   --output_name vitpose_dataframe.pkl \
   --camera_params_root "${CAMERA_PARAMS_ROOT}" \
+  --intrinsics_root "${INTRINSICS_ROOT}" \
   --gt_groups_root "${GT_GROUPS_ROOT}" \
   --plot_dir "${PLOT_DIR}" \
   --frames_root "${FRAMES_ROOT}"
@@ -325,9 +327,11 @@ Each `spaceFeat` segment is an `(n_people, 4)` object array:
 The `x` and `y` coordinates are world-floor coordinates. The converter back-projects 2D ViTPose keypoints using:
 
 ```text
-<CAMERA_PARAMS_ROOT>/camera_XX/intrinsic.json
+<INTRINSICS_ROOT>/parameters-camera-XX.json
 <CAMERA_PARAMS_ROOT>/camera_XX/extrinsic.json
 ```
+
+`parameters-camera-XX.json` is a libCalib calibrator export with an OpenCV fisheye model (`libCalib::CameraModelOpenCVFisheye`); `f`, `ar`, `cx`, `cy`, `k1`–`k4` are read from `Calibration.cameras[0].model.ptr_wrapper.data.parameters`.
 
 Diagnostic plots are written under:
 

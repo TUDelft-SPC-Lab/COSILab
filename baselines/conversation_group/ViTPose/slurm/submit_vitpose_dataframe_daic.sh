@@ -22,6 +22,7 @@ RESULTS_ROOT="${RESULTS_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/vitp
 OUTPUT_ROOT="${OUTPUT_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/vitpose_dataframe}"
 
 CAMERA_PARAMS_ROOT="${CAMERA_PARAMS_ROOT:-${NEON}/cosilab_project/processed_data/gopro_data/camera_calibration/camera_params}"
+INTRINSICS_ROOT="${INTRINSICS_ROOT:-${NEON}/cosilab_project/4TU_upload/processed/videos/camera_calibration/calibration_params/intrinsics}"
 CAMERA_NUMBERS="${CAMERA_NUMBERS:-}"
 GT_GROUPS_ROOT="${GT_GROUPS_ROOT:-${NEON}/cosilab_project/data_temp/B2_pipeline/cgroup_annotation}"
 PLOT_DIR="${PLOT_DIR:-${NEON}/cosilab_project/data_temp/B2_pipeline/person_plotting}"
@@ -63,10 +64,15 @@ if [[ ! -d "${CAMERA_PARAMS_ROOT}" ]]; then
     echo "Warning: CAMERA_PARAMS_ROOT not found: ${CAMERA_PARAMS_ROOT}" >&2
 fi
 
+if [[ ! -d "${INTRINSICS_ROOT}" ]]; then
+    echo "Warning: INTRINSICS_ROOT not found: ${INTRINSICS_ROOT}" >&2
+fi
+
 echo "Submitting ViTPose dataframe conversion"
 echo "  results_root=${RESULTS_ROOT}"
 echo "  output_root=${OUTPUT_ROOT}"
 echo "  camera_params_root=${CAMERA_PARAMS_ROOT}"
+echo "  intrinsics_root=${INTRINSICS_ROOT}"
 echo "  gt_groups_root=${GT_GROUPS_ROOT}"
 echo "  plot_dir=${PLOT_DIR}"
 echo "  frames_root=${FRAMES_ROOT}"
@@ -79,6 +85,7 @@ python_args=(
     --output_dir "${OUTPUT_ROOT}"
     --output_name vitpose_dataframe.pkl
     --camera_params_root "${CAMERA_PARAMS_ROOT}"
+    --intrinsics_root "${INTRINSICS_ROOT}"
     --gt_groups_root "${GT_GROUPS_ROOT}"
     --plot_dir "${PLOT_DIR}"
     --frames_root "${FRAMES_ROOT}"
@@ -110,8 +117,9 @@ echo "Dataframes written under ${OUTPUT_ROOT}"
 #    OUTPUT_ROOT=/path/to/B2_pipeline/vitpose_dataframe \
 #    sbatch slurm/submit_vitpose_dataframe_daic.sh
 #
-# 3) Override camera params root:
+# 3) Override camera params roots (extrinsics / libCalib intrinsics):
 #    CAMERA_PARAMS_ROOT=/path/to/camera_params \
+#    INTRINSICS_ROOT=/path/to/intrinsics \
 #    sbatch slurm/submit_vitpose_dataframe_daic.sh
 # 
 # 4) Only process specific cameras:

@@ -39,9 +39,10 @@ Each spaceFeat entry is an (n_people, 4) object array containing:
 The saved x/y values are world-floor coordinates obtained by back-projecting
 the 2D keypoints with per-camera intrinsic/extrinsic calibration loaded from:
 
+    <intrinsics_root>/
+        parameters-camera-XX.json      (libCalib calibrator export)
     <camera_params_root>/
         camera_XX/
-            intrinsic.json
             extrinsic.json
 """
 
@@ -63,6 +64,11 @@ CONF_THRESHOLD = 0.0
 CAMERA_PARAMS_ROOT = Path(
     "/tudelft.net/staff-umbrella/neon/cosilab_project/processed_data/"
     "gopro_data/camera_calibration/camera_params"
+)
+# Directory holding one libCalib export per camera: parameters-camera-XX.json
+INTRINSICS_ROOT = Path(
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/4TU_upload/processed/"
+    "videos/camera_calibration/calibration_params/intrinsics"
 )
 
 # --- Resolution bookkeeping ---------------------------------------------- #
@@ -281,7 +287,7 @@ def _gt_csv_name_for_camera(cam_number: str) -> str | None:
     return None
 
 
-_camera_params_cache: dict[tuple[str, str], dict] = {}
+_camera_params_cache: dict[tuple[str, str, str], dict] = {}
 
 
 def cam_number_from_name(cam_name: str) -> str | None:
@@ -389,44 +395,85 @@ def normalize_distortion_coefficients(
     raise ValueError(f"Unknown camera model: {model!r}")
 
 
+LIBCALIB_FISHEYE_MODEL = "libCalib::CameraModelOpenCVFisheye"
+
+
+def load_libcalib_intrinsics(intrinsic_path: str | Path) -> tuple[str, np.ndarray, np.ndarray]:
+    """Read (model, K, D) from a libCalib calibrator export.
+
+    Expects ``Calibration.cameras[0].model`` with ``polymorphic_name`` equal
+    to :data:`LIBCALIB_FISHEYE_MODEL` and ``ptr_wrapper.data.parameters``
+    holding ``{"val": ...}`` entries for f, ar, cx, cy, k1, k2, k3, k4.
+    fx = f, fy = f * ar.
+    """
+    intrinsic_path = Path(intrinsic_path)
+    with open(intrinsic_path) as f:
+        data = json.load(f)
+    calib = data["Calibration"] if "Calibration" in data else data["calibration"]
+    cam_model = calib["cameras"][0]["model"]
+
+    polymorphic_name = cam_model.get("polymorphic_name", "")
+    if polymorphic_name != LIBCALIB_FISHEYE_MODEL:
+        raise ValueError(
+            f"Unsupported camera model {polymorphic_name!r} in {intrinsic_path}; "
+            f"expected {LIBCALIB_FISHEYE_MODEL!r}."
+        )
+    model = "fisheye"
+
+    model_data = cam_model["ptr_wrapper"]["data"]
+    params = model_data["parameters"]
+    val = lambda name: float(params[name]["val"])
+
+    image_size = (
+        model_data.get("CameraModelCRT", {})
+        .get("CameraModelBase", {})
+        .get("imageSize")
+    )
+    if image_size is not None:
+        size = (int(image_size["width"]), int(image_size["height"]))
+        if size != INTRINSIC_IMAGE_SIZE:
+            print(
+                f"  Warning: {intrinsic_path.name} was calibrated at {size}, "
+                f"but INTRINSIC_IMAGE_SIZE is {INTRINSIC_IMAGE_SIZE}."
+            )
+
+    fx = val("f")
+    fy = fx * val("ar")
+    K = np.array(
+        [[fx, 0.0, val("cx")], [0.0, fy, val("cy")], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
+    D = np.array([val("k1"), val("k2"), val("k3"), val("k4")], dtype=np.float64)
+    return model, K, D
+
+
 def load_camera_params(
     cam_number: str | int,
     camera_params_root: str | Path = CAMERA_PARAMS_ROOT,
+    intrinsics_root: str | Path = INTRINSICS_ROOT,
 ) -> dict:
-    """Load per-camera intrinsics and extrinsics from camera_XX/*.json.
+    """Load per-camera intrinsics and extrinsics.
 
-    The intrinsic JSON may include a ``"model"`` field set to ``"fisheye"``
-    (Kannala-Brandt, matches ``libCalib::CameraModelOpenCVFisheye``) or
-    ``"pinhole"``. When the field is absent we default to
-    :data:`DEFAULT_CAMERA_MODEL` (fisheye).
+    Intrinsics come from ``<intrinsics_root>/parameters-camera-XX.json``
+    (libCalib export, see :func:`load_libcalib_intrinsics`); extrinsics come
+    from ``<camera_params_root>/camera_XX/extrinsic.json`` (``rvec``/``tvec``).
     """
     cam_id = str(cam_number).zfill(2)
-    cache_key = (str(Path(camera_params_root)), cam_id)
+    cache_key = (str(Path(camera_params_root)), str(Path(intrinsics_root)), cam_id)
     if cache_key in _camera_params_cache:
         return _camera_params_cache[cache_key]
 
-    camera_dir = Path(camera_params_root) / f"camera_{cam_id}"
-    intrinsic_path = camera_dir / "intrinsic.json"
-    extrinsic_path = camera_dir / "extrinsic.json"
+    intrinsic_path = Path(intrinsics_root) / f"parameters-camera-{cam_id}.json"
+    extrinsic_path = Path(camera_params_root) / f"camera_{cam_id}" / "extrinsic.json"
 
-    with open(intrinsic_path) as f:
-        intrinsic_data = json.load(f)
+    model, K, D = load_libcalib_intrinsics(intrinsic_path)
     with open(extrinsic_path) as f:
         extrinsic_data = json.load(f)
 
-    model = str(intrinsic_data.get("model", DEFAULT_CAMERA_MODEL)).lower()
-    if model not in {"fisheye", "pinhole"}:
-        raise ValueError(
-            f"Unknown camera model {model!r} in {intrinsic_path}; "
-            "expected 'fisheye' or 'pinhole'."
-        )
-
     params = {
         "model": model,
-        "K": np.asarray(intrinsic_data["intrinsic"], dtype=np.float64),
-        "D": normalize_distortion_coefficients(
-            intrinsic_data["distortion_coefficients"], model=model
-        ),
+        "K": K,
+        "D": D,
         "rvec": np.asarray(extrinsic_data["rvec"], dtype=np.float64).reshape(3, 1),
         "tvec": np.asarray(extrinsic_data["tvec"], dtype=np.float64).reshape(3, 1),
     }
@@ -611,6 +658,7 @@ def process_vitpose_json(
     input_path: str | Path,
     cam_number: str | int,
     camera_params_root: str | Path = CAMERA_PARAMS_ROOT,
+    intrinsics_root: str | Path = INTRINSICS_ROOT,
     body_height: float = BODY_HEIGHT,
     conf_thresh: float = CONF_THRESHOLD,
     batch_number: int | None = None,
@@ -639,7 +687,11 @@ def process_vitpose_json(
     with open(input_path) as f:
         data = json.load(f)
 
-    camera_params = load_camera_params(cam_number, camera_params_root=camera_params_root)
+    camera_params = load_camera_params(
+        cam_number,
+        camera_params_root=camera_params_root,
+        intrinsics_root=intrinsics_root,
+    )
     K = camera_params["K"]
     D = camera_params["D"]
     rvec = camera_params["rvec"]
@@ -917,6 +969,7 @@ def process_results_directory(
     output_name: str = "vitpose_dataframe.pkl",
     conf_thresh: float = CONF_THRESHOLD,
     camera_params_root: str | Path = CAMERA_PARAMS_ROOT,
+    intrinsics_root: str | Path = INTRINSICS_ROOT,
     body_height: float = BODY_HEIGHT,
     camera_numbers=None,
     gt_groups_root: str | Path | None = None,
@@ -994,6 +1047,7 @@ def process_results_directory(
             json_file,
             cam_number=cam_number,
             camera_params_root=camera_params_root,
+            intrinsics_root=intrinsics_root,
             body_height=body_height,
             conf_thresh=conf_thresh,
             batch_number=batch_num,
@@ -1021,7 +1075,9 @@ def process_results_directory(
             cam_plot_dir.mkdir(parents=True, exist_ok=True)
 
             cam_params = load_camera_params(
-                cam_number, camera_params_root=camera_params_root
+                cam_number,
+                camera_params_root=camera_params_root,
+                intrinsics_root=intrinsics_root,
             )
             cam_world_xy = _camera_center_world_xy(
                 cam_params["rvec"], cam_params["tvec"]
@@ -1088,7 +1144,12 @@ def parse_args():
     parser.add_argument(
         "--camera_params_root",
         default=str(CAMERA_PARAMS_ROOT),
-        help="Root containing camera_XX/intrinsic.json and extrinsic.json.",
+        help="Root containing camera_XX/extrinsic.json.",
+    )
+    parser.add_argument(
+        "--intrinsics_root",
+        default=str(INTRINSICS_ROOT),
+        help="Directory containing libCalib parameters-camera-XX.json files.",
     )
     parser.add_argument(
         "--camera_numbers",
@@ -1151,6 +1212,7 @@ if __name__ == "__main__":
         output_name=args.output_name,
         conf_thresh=args.conf_thresh,
         camera_params_root=args.camera_params_root,
+        intrinsics_root=args.intrinsics_root,
         body_height=args.body_height,
         camera_numbers=args.camera_numbers,
         gt_groups_root=args.gt_groups_root,
