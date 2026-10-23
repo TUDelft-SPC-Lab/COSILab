@@ -2,10 +2,10 @@
 
 This folder contains utilities for GoPro-style video postprocessing. The core functions documented here are:
 
-1. Concatenate raw per-camera video chunks into one continuous video per camera.
-2. Cut a frame-accurate video segment for every camera directly from the raw per-camera video chunks, either by relative time or by embedded video timecode.
-3. Split a requested interval of the raw per-camera video chunks into numbered frame images.
-4. Generate a per-frame real-time timestamp CSV for every raw per-camera video chunk.
+1. Cut a frame-accurate video segment for every camera directly from the raw per-camera video chunks, either by relative time or by embedded video timecode.
+2. Split a requested interval of the raw per-camera video chunks into numbered frame images.
+3. Generate a per-frame real-time timestamp CSV for every raw per-camera video chunk.
+4. Find the raw frame each keypoint-pipeline session video starts at, so its frames can be given world-clock times.
 
 Segment cutting, frame splitting, and timestamp generation all correct for cameras that record at a true rate (e.g. 59.94 fps) slightly off from the nominal 60 fps clock that timecodes and requested times are expressed against, so multi-file, multi-hour recordings stay frame-accurate.
 
@@ -28,7 +28,7 @@ The scripts live in the `video_postprocess` package under `src/video_postprocess
 
 ## 1. Fix Corrupted Videos
 
-If a camera stopped recording because the GoPro battery died, repair the last chunk before doing any concatenation, segment cutting, or frame splitting.
+If a camera stopped recording because the GoPro battery died, repair the last chunk before doing any segment cutting or frame splitting.
 
 Use:
 
@@ -46,59 +46,7 @@ uv run python -m video_postprocess.fix_gopro_battery_dies_video \
 
 The script checks the last video in each camera folder. If it is truncated, it repairs it with [untrunc](https://github.com/anthwlock/untrunc) and writes the fixed file into the target directory, preserving the camera subfolder layout. `untrunc` is an external tool and must be installed separately.
 
-## 2. Concatenate Raw Video Segments by Timecode
-
-Use:
-
-```text
-concat_videos.py
-```
-
-This script expects a source directory containing one subdirectory per camera. Each camera subdirectory should contain the raw video chunks for that camera:
-
-```text
-raw_videos/
-  cam01/
-    GX010001.MP4
-    GX020001.MP4
-  cam02/
-    GX010002.MP4
-    GX020002.MP4
-```
-
-Run:
-
-```bash
-uv run python -m video_postprocess.concat_videos \
-  --source-directory /path/to/raw_videos \
-  --target-directory /path/to/concatenated_videos
-```
-
-For each camera folder, the script:
-
-1. Finds `*.mp4` and `*.MP4` files.
-2. Sorts them by filename.
-3. Reads the embedded timecode from the first video with `VideoTimecode.from_video()`.
-4. Writes a temporary ffmpeg concat list.
-5. Runs ffmpeg concat with stream copy:
-
-```text
--f concat -safe 0 -i <concat_list> -c copy -timecode <first_video_timecode>
-```
-
-The output is one file per camera:
-
-```text
-concatenated_videos/
-  cam01.mp4
-  cam02.mp4
-```
-
-The resulting concatenated file keeps the first raw segment's embedded timecode as the output timecode.
-
-This step is now independent of segment cutting and frame splitting below — both of those work directly on the raw per-camera chunks, so only run this if you want a single continuous file per camera for other purposes (e.g. playback, archiving).
-
-## 3. Cut Video Segments From a Specific Interval
+## 2. Cut Video Segments From a Specific Interval
 
 Use:
 
@@ -106,7 +54,7 @@ Use:
 extract_segment_from_video.py
 ```
 
-This script works directly on raw per-camera video chunks — the same source layout as `concat_videos.py` above, **not** its concatenated output:
+This script works directly on raw per-camera video chunks. It expects a source directory containing one subdirectory per camera, each holding that camera's raw video chunks:
 
 ```text
 raw_videos/
@@ -215,7 +163,7 @@ uv run python -m video_postprocess.batch_extract_segments \
 
 Every segment in a run is written to the same `--target-directory`, and each camera's output file is always named `<camera>.mp4`, so **only the last segment of a run survives** in that directory. Use a separate `--target-directory` per segment (or per small batch) if you need to keep more than one.
 
-## 4. Split Video Into Frame Images
+## 3. Split Video Into Frame Images
 
 Use:
 
@@ -271,7 +219,7 @@ This keeps every 10th frame of the requested interval; the sampling grid stays a
 
 `CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
 
-## 5. Generate Real-Time Timestamp CSVs
+## 4. Generate Real-Time Timestamp CSVs
 
 Use:
 
@@ -322,6 +270,63 @@ Both columns correct for a camera's true framerate (e.g. 59.94 fps) against the 
 
 `CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
 
+## 5. Match Session Videos to Raw Frames
+
+Use:
+
+```text
+match_session_video_to_raw.py
+```
+
+The keypoint pipeline ran on per-camera session videos (`mingling_session_videos/camXX.mp4`), split into 600-frame segments (`camXX_segNNN.mp4`). Each session video is a gap-free run of consecutive raw frames, continuing across chunk boundaries, extracted without the 59.94 fps correction. Its embedded timecode is not reliable. This script measures which raw frame each camera's session video starts at, by matching the first frames of its segments against the raw chunks.
+
+Expected inputs:
+
+```text
+top_view_camera-mingle_session_2/   # --raw-directory
+  camera_01-mingle_session_2/
+    GH010189.MP4
+    ...
+video_segs_raw/                     # --segments-directory
+  cam01/
+    cam01_seg001.mp4
+    ...
+mingling_session_videos/            # --session-videos-directory
+  cam01.mp4
+```
+
+Run once per session, into the same output CSV:
+
+```bash
+uv run python -m video_postprocess.match_session_video_to_raw \
+  --raw-directory /path/to/gopro_data/top_view_camera-mingle_session_2 \
+  --segments-directory /path/to/keypoints/video_segs_raw \
+  --session-videos-directory /path/to/mingling_session_videos \
+  --session-start 14:52:00:00 \
+  --cameras 01,03,05 \
+  --output-csv /path/to/session_video_raw_start.csv
+```
+
+`--session-start` is the time label of the first session video frame: `13:45:00:00` for session 1 and `14:52:00:00` for session 2.
+
+For each camera, the script:
+
+1. Reads every chunk's framerate and frame count with `video_segments.collect_camera_video_infos()`.
+2. Converts `--session-start` to a first guess of the raw start frame, correcting for the true framerate, and searches `--first-search` frames around it (1200 by default) for the raw frame that best matches the first frame of segment 1. Frames are compared as small grayscale thumbnails by mean absolute difference.
+3. Checks `--num-checks` further segments (5 by default): segment `n` must start exactly at raw frame `raw_start_frame + (n - 1) * 600`, searched within `--check-search` frames. It fails if any segment lands elsewhere or if no frame matches.
+4. Checks that the whole session video fits within the readable raw chunks.
+
+The output CSV has one row per camera. Rows already in the file for other cameras are kept:
+
+```text
+camera, session, raw_start_file, raw_start_local_frame, raw_start_frame, session_frames
+```
+
+- `raw_start_frame` counts frames across all readable chunks of the camera in playback order. `raw_start_file` and `raw_start_local_frame` give the same frame within its chunk.
+- `session_frames` is the frame count of the session video.
+
+Session video frame `s` is raw frame `raw_start_frame + s`, and its world-clock time is the matching row of the timestamp CSVs from [section 4](#4-generate-real-time-timestamp-csvs). `baselines/conversation_group/ViTPose/demo/add_world_time.py` uses this to add `world_time` to the keypoint dataframes. The measured values for the six keypoint cameras are in `baselines/conversation_group/ViTPose/demo/session_video_raw_start.csv`.
+
 ## 6. Camera Calibration Pipeline
 
 The camera calibration utilities in this folder support this workflow:
@@ -347,7 +352,7 @@ camera_calibration/
 
 ### Step 1: Prepare Calibration Images
 
-Calibration frames can be sampled from the raw GoPro chunks with `extract_frames_from_video.py` (see [section 4](#4-split-video-into-frame-images)). `job_scripts/extract_calib.sh` (Linux) and `job_scripts/extract_calib.ps1` (Windows) do this for the side-view and top-view cameras of both mingle sessions, using the calibration timecode intervals and `--every-n-frames` sampling; edit the data paths at the top of the script before running it.
+Calibration frames can be sampled from the raw GoPro chunks with `extract_frames_from_video.py` (see [section 3](#3-split-video-into-frame-images)). `job_scripts/extract_calib.sh` (Linux) and `job_scripts/extract_calib.ps1` (Windows) do this for the side-view and top-view cameras of both mingle sessions, using the calibration timecode intervals and `--every-n-frames` sampling; edit the data paths at the top of the script before running it.
 
 `generate_calib_project.py` expects one folder per camera:
 
@@ -583,12 +588,11 @@ sbatch video_postprocess/job_scripts/extract_segments.sh \
 
 ## Minimal Files Needed
 
-If you only want to keep the concatenation, segment-cutting, frame-splitting, and timestamp-CSV functions above, the required runtime files are:
+If you only want to keep the segment-cutting, frame-splitting, and timestamp-CSV functions above, the required runtime files are:
 
 ```text
 video_postprocess/
   __init__.py
-  concat_videos.py
   extract_segment_from_video.py
   extract_frames_from_video.py
   generate_timestamps_csv.py
@@ -605,10 +609,11 @@ video_postprocess/
   fix_gopro_battery_dies_video.py    # repair a truncated last chunk with untrunc
   cut_gopro_annotation_segments.py   # fixed 30-second GoPro annotation cuts
   batch_extract_segments.py          # predefined segment lists TIME_SEGS_1 / TIME_SEGS_2
+  match_session_video_to_raw.py      # raw start frame of the keypoint-pipeline session videos
   py.typed                           # optional typing marker, not needed at runtime
 ```
 
-Everything else in `video_postprocess/` is unrelated to concatenating videos, cutting video intervals, splitting videos into frames, or generating timestamp CSVs, and can be removed for this reduced workflow.
+Everything else in `video_postprocess/` is unrelated to cutting video intervals, splitting videos into frames, or generating timestamp CSVs, and can be removed for this reduced workflow.
 
 If you also want to keep camera calibration support, keep these additional files:
 
@@ -624,7 +629,7 @@ video_postprocess/
     easymocap.py
 ```
 
-Required Python packages for video concatenation, segment cutting, frame splitting, and timestamp CSV generation:
+Required Python packages for segment cutting, frame splitting, and timestamp CSV generation:
 
 ```text
 av

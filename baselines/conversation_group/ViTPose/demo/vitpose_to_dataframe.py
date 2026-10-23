@@ -187,7 +187,12 @@ def _frame_to_time_str(
     frame_index: int,
     fps: int = FPS,
 ) -> str:
-    """Map a frame index within a batch to an absolute 'HH:MM:SS;FF' string."""
+    """Map a frame index within a batch to an 'HH:MM:SS;FF' session video time label.
+
+    The label counts 60 frames per second from the session video start, so it is
+    not the world clock: it falls behind by about 1 ms per second because the
+    GoPros record at 59.94 fps. See ``add_world_time_column`` for the world clock.
+    """
     start = _camera_start_seconds(cam_number)
     if start is None:
         return ""
@@ -198,6 +203,37 @@ def _frame_to_time_str(
     mm = (total_secs % 3600) // 60
     ss = total_secs % 60
     return f"{hh:02d}:{mm:02d}:{ss:02d};{ff:02d}"
+
+
+def load_world_time_table(world_time_root: str | Path, cam_number: str) -> pd.DataFrame | None:
+    """Read ``cam<XX>_world_time.csv`` (written by add_world_time.py), one row per session video frame."""
+    csv_path = Path(world_time_root) / f"cam{cam_number}_world_time.csv"
+    if not csv_path.is_file():
+        print(f"  Warning: world time CSV not found: {csv_path}")
+        return None
+    return pd.read_csv(csv_path, dtype={"video_time": str, "raw_file": str, "world_timestamp": str})
+
+
+def add_world_time_column(
+    df: pd.DataFrame,
+    world_time_table: pd.DataFrame,
+    batch_number: int,
+) -> pd.DataFrame:
+    """Add a ``world_time`` column ('HH:MM:SS.ffffff') right after ``time``.
+
+    The world clock comes from the drift-corrected per-frame timestamps of the
+    raw GoPro files (videos/timestamps/), looked up through each session video
+    frame's raw frame. Raises if the table's time labels do not match ``time``,
+    which would mean the table belongs to a different camera or session video.
+    """
+    session_frames = (batch_number - 1) * FRAMES_PER_BATCH + df["timestamp"].astype(int).to_numpy()
+    rows = world_time_table.iloc[session_frames]
+    if (rows["video_time"].to_numpy() != df["time"].to_numpy()).any():
+        raise ValueError("World time table labels do not match the dataframe 'time' column")
+
+    df = df.drop(columns="world_time", errors="ignore")
+    df.insert(df.columns.get_loc("time") + 1, "world_time", rows["world_timestamp"].to_numpy())
+    return df
 
 
 def _normalize_time_key(raw: str) -> str:
@@ -586,7 +622,7 @@ def process_vitpose_json(
 
     Columns:
         - timestamp
-        - time        (HH:MM:SS;FF wall-clock time, empty if batch info unavailable)
+        - time        (HH:MM:SS;FF session video time label, empty if batch info unavailable)
         - spaceFeat
         - groups      (list of sets from GT CSV, empty if time not in CSV)
         - group_ids
@@ -656,7 +692,7 @@ def process_vitpose_json(
             else:
                 spacefeat[segment_name] = np.empty((0, 4), dtype=object)
 
-        # Compute wall-clock time and look up GT groups
+        # Compute the session video time label and look up GT groups
         time_str = ""
         gt_group: list[set[int]] = []
         if batch_number is not None:
@@ -887,10 +923,14 @@ def process_results_directory(
     plot_dir: str | Path | None = None,
     frames_root: str | Path | None = None,
     plot_frame_interval: int = PLOT_FRAME_INTERVAL,
+    world_time_root: str | Path | None = None,
 ) -> None:
     """
     Walk every cam*/vitpose_keypoints.json under results_dir and write a
     dataframe alongside the input, or under output_dir/<cam_name>/.
+
+    When ``world_time_root`` is set, a ``world_time`` column is added from the
+    ``cam<XX>_world_time.csv`` tables in it (see add_world_time.py).
 
     When ``plot_dir`` is set, two kinds of diagnostic plots are written under
     ``plot_dir/cam<XX>/`` every ``plot_frame_interval`` frames (1200 by default,
@@ -919,6 +959,8 @@ def process_results_directory(
     _gt_csv_cache: dict[str, dict[str, str]] = {}
     if gt_groups_root is not None:
         gt_groups_root = Path(gt_groups_root)
+
+    _world_time_cache: dict[str, pd.DataFrame | None] = {}
 
     json_files = sorted(results_dir.glob("*/vitpose_keypoints.json"))
     print(f"Found {len(json_files)} result files under {results_dir}")
@@ -958,6 +1000,12 @@ def process_results_directory(
             gt_groups=gt_groups,
             plot_frame_interval=plot_frame_interval if plot_dir is not None else None,
         )
+
+        if world_time_root is not None and batch_num is not None and not df.empty:
+            if cam_number not in _world_time_cache:
+                _world_time_cache[cam_number] = load_world_time_table(world_time_root, cam_number)
+            if _world_time_cache[cam_number] is not None:
+                df = add_world_time_column(df, _world_time_cache[cam_number], batch_num)
 
         if output_dir is not None:
             out_path = output_dir / cam_name / output_name
@@ -1084,6 +1132,14 @@ def parse_args():
             f"{PLOT_FRAME_INTERVAL} = every 20 s at 60 fps)."
         ),
     )
+    parser.add_argument(
+        "--world_time_root",
+        default=None,
+        help=(
+            "Optional directory containing cam<XX>_world_time.csv tables written "
+            "by add_world_time.py. If set, a world_time column is added."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1101,4 +1157,5 @@ if __name__ == "__main__":
         plot_dir=args.plot_dir,
         frames_root=args.frames_root,
         plot_frame_interval=args.plot_frame_interval,
+        world_time_root=args.world_time_root,
     )
