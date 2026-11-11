@@ -10,16 +10,16 @@ the media actually contributed.
 Two consequences worth knowing before reading results:
 
   * The prompt names no clip, so every record a persona answers gets the same
-    turn. Under the packaged do_sample=false that is one answer copied N times;
-    use a sampling model config (and --trials, if you want several per clip)
-    for a distribution rather than a constant.
+    turn. Under the packaged do_sample=false that is one answer copied N times.
+    job_scripts/intention/persona_blind.sh therefore runs one clip per persona
+    with sampling on and --trials for the distribution.
   * The clip is still resolved, though never shown. That keeps the retained
     clip set identical to the media modes' -- a clip missing from the share is
     skipped here exactly as it is there -- and keeps the video path columns in
     the result rows, so blind rows join to pa/fa rows on the same keys.
 
 Any assignment built for another mode is valid here: blind needs a subset of
-what every mode needs. persona.sh accepts one accordingly.
+what every mode needs. persona_blind.sh accepts one accordingly.
 """
 
 from __future__ import annotations

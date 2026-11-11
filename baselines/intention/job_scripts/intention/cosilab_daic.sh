@@ -329,7 +329,8 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
 fi
 
 if [[ "${persona_job}" == "0" && "${persona_option_seen}" == "1" ]]; then
-    echo "[ERROR] Persona options are submitted through persona.sh, not directly through" >&2
+    echo "[ERROR] Persona options are submitted through persona.sh (or persona_blind.sh)," >&2
+    echo "        not directly through" >&2
     echo "        cosilab_daic.sh. The launcher validates the source, sizes the jobs and" >&2
     echo "        prevents two jobs from writing the same persona output." >&2
     exit 1
