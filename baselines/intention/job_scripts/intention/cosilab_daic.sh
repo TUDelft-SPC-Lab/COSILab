@@ -25,7 +25,7 @@
 #
 # Neither what runs nor what is asked is fixed here: --backend picks the model
 # and lib/model_backends.sh maps that name to a container image; --mode picks the
-# task variant (fa/sa/pa). Any backend runs any mode.
+# task variant (fa/sa/pa/blind). Any backend runs any mode.
 #
 # The shared header requests two GPUs so direct Qwen jobs expose both devices to
 # Accelerate. A direct Gemma job can release the unused card with an sbatch
@@ -381,6 +381,12 @@ if [[ "${no_instruction_prompt}" == "1" ]]; then
         echo "        Pass one of them." >&2
         exit 1
     fi
+    instruction_prompt=""
+fi
+# blind asks its own prompt config's question, not the watch-and-listen
+# baseline. Mirrors BaseTaskMode.uses_default_instruction_prompt; here so the
+# output path below is not filed under the baseline prompt's subdirectory.
+if [[ "${mode}" == "blind" && "${instruction_prompt}" == "${INTENTION_DEFAULT_INSTRUCTION_PROMPT}" ]]; then
     instruction_prompt=""
 fi
 if [[ -n "${instruction_prompt}" && ! -f "${instruction_prompt}" ]]; then

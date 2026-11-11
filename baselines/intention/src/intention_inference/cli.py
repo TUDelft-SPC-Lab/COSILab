@@ -78,7 +78,7 @@ def parse_args() -> argparse.Namespace:
         choices=available_modes(),
         help=(
             "Task mode: how much of the group's audio is stacked, and what grounds the "
-            "question. Defaults to pa, which is the mode the instruction prompts in "
+            "question; 'blind' sends no media at all. Defaults to pa, which is the mode the instruction prompts in "
             "prompt_structure_and_phrasing_variants are written for. Unlike --backend "
             "this is defaulted rather than required, because the experiment varies the "
             "wording and not the mode -- but it is still a path component, so a run "
@@ -387,6 +387,20 @@ def main() -> None:
     selector = select_run_plan(args)
     selector.validate(args)
 
+    # A mode the baseline wording would misdescribe (blind) asks its own config's
+    # question unless a prompt was named. Recorded on args, not just locally,
+    # because the summary reports the instruction prompt from there.
+    if (
+        not args.no_instruction_prompt
+        and not mode.uses_default_instruction_prompt
+        and args.instruction_prompt.expanduser().resolve() == DEFAULT_INSTRUCTION_PROMPT
+    ):
+        print(
+            f"[INFO] Mode {mode.name} does not use the default instruction prompt; "
+            "asking its prompt config's own question."
+        )
+        args.no_instruction_prompt = True
+
     input_json_path = args.input_json.expanduser().resolve()
     prompt_config_path = (
         mode.prompt_config_path if args.prompt_config is None else args.prompt_config
@@ -427,6 +441,12 @@ def main() -> None:
             instruction_text, mode=mode.name, source=instruction_prompt_path
         )
         prompt_config = apply_to_prompt_config(prompt_config, instruction_text)
+    elif not mode.uses_default_instruction_prompt:
+        # The mode's own question is carried as the instruction text, so it
+        # reaches a task spec's per-task configs too. Otherwise a task that brought
+        # its own config would ask that config's watch-and-listen wording in a
+        # turn that holds no media, and nothing would flag the answer.
+        instruction_text = prompt_config["user_prompt_template"]
 
     # Handed over before any record is prepared: a mode that labels its own parts
     # keeps those templates in the prompt config, and needs them while building

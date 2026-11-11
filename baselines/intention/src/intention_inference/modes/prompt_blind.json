@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "The blind control (modes/blind.py): no video, no audio, no participant crop.",
+    "The template is rendered with str.format_map, so the literal JSON braces in",
+    "the reply format are doubled here and come out single in the prompt.",
+    "",
+    "The default instruction prompt is NOT applied to this mode -- it asks the",
+    "model to watch and listen. To vary the blind wording, pass a file with",
+    "--instruction-prompt; it must not carry PA's <image>/<audio1>/<audio2> markers."
+  ],
+
+  "system_prompt": "You are a helpful multimodal assistant.",
+
+  "user_prompt_template": "Clip X: a 30-second video of a target participant at a standing social mingling event, where people talk in small groups. The video and audio of this clip are NOT available to you. Based only on what typically happens at such events, write one intention the target participant most likely has during the clip and explain why, as you would if you had watched it.\n\nReply with JSON only: {{\"intention_description\": \"<one sentence>\", \"intention_explanation\": \"<one or two sentences>\"}}"
+}

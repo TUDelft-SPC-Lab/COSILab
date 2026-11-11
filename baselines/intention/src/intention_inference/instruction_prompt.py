@@ -105,6 +105,8 @@ def incompatibility_reasons(instruction_text: str, *, mode: str) -> list[str]:
     that was never in the turn. Nothing downstream could tell that apart from a
     real result, so it has to be stopped before the weights load.
     """
+    if mode == "blind":
+        return _blind_incompatibility_reasons(instruction_text)
     if mode != "fa":
         return []
 
@@ -124,6 +126,26 @@ def incompatibility_reasons(instruction_text: str, *, mode: str) -> list[str]:
             "It describes a second, aggregated track for the other participants. fa "
             "stacks nothing -- every person in the group gets their own audio part -- "
             "so the prompt would describe a turn this run does not build."
+        )
+
+    return reasons
+
+
+def _blind_incompatibility_reasons(instruction_text: str) -> list[str]:
+    """blind builds a text-only turn, so any prompt pointing at media is false."""
+    reasons: list[str] = []
+
+    present = [marker for marker in PA_MEDIA_MARKERS if marker in instruction_text]
+    if present:
+        reasons.append(
+            f"It carries PA's markers {', '.join(present)}. blind sends no image and "
+            "no audio, so they point at media the model never receives."
+        )
+
+    if any(word in instruction_text for word in PA_STACKING_WORDS):
+        reasons.append(
+            "It describes an aggregated audio track. blind sends no audio at all, so "
+            "the prompt would describe a turn this run does not build."
         )
 
     return reasons

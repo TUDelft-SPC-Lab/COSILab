@@ -3,8 +3,9 @@
 NOT to be confused with ``intention_inference/modes/``, which is the other axis.
 A run is decided along two of them, and they are orthogonal:
 
-    modes/  pa | fa | sa            WHAT is asked -- how much of the group's
-                                    audio is stacked, and how the prompt is worded
+    modes/  pa | fa | sa | blind    WHAT is asked -- how much of the group's
+                                    audio is stacked (blind: no media at all),
+                                    and how the prompt is worded
     runs/   single | assignment |   WHO asks it, over WHICH clips
             spec
 

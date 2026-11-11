@@ -40,6 +40,11 @@ class BaseTaskMode(ABC):
     # mode owning a default is what lets the job script stop knowing where any
     # particular JSON lives.
     prompt_config_path: Path
+    # Whether the run-wide default instruction prompt applies to this mode. False
+    # for a mode the baseline wording would misdescribe (blind: it says "watch
+    # and listen"); such a mode asks its own prompt config's question unless an
+    # instruction prompt is passed explicitly.
+    uses_default_instruction_prompt: bool = True
 
     def __init__(self) -> None:
         self.prompt_config: dict[str, Any] = {}

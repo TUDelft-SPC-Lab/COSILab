@@ -30,6 +30,10 @@ __all__ = [
 #   pa   2 audio parts   person of interest, and everyone else stacked
 #   fa   N audio parts   one per person, each labelled with their id
 #
+# blind sits off that axis: no media at all, only the persona and a text prompt
+# saying the clip is withheld. It is the control the other three are measured
+# against -- what the model says from priors alone.
+#
 # A placeholder belongs in this table too, not outside it: an unfinished mode
 # that is merely absent looks to the caller exactly like a typo, whereas one that
 # is present and raises can say what remains to be written.
@@ -37,6 +41,7 @@ MODE_MODULES: dict[str, str] = {
     "pa": "intention_inference.modes.pa:PartiallyStackedAudioMode",
     "fa": "intention_inference.modes.fa:FlattenedAudioMode",
     "sa": "intention_inference.modes.sa:StackedAudioMode",
+    "blind": "intention_inference.modes.blind:BlindMode",
 }
 
 # No default mode, for the reason --backend has none: which variant of the

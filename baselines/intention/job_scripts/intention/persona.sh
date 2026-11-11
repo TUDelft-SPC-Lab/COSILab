@@ -48,6 +48,16 @@
 # model varies at fixed inputs. It needs sampling on in the model config; under
 # the packaged do_sample=false every trial returns identical text.
 #
+# --mode blind is the no-media control: same personas and clips, but the model
+# gets only the persona and a prompt saying the clip is withheld
+# (modes/prompt_blind.json). It reuses an assignment built for pa or fa. Every
+# clip gets the same prompt, so under do_sample=false each persona gives one
+# answer repeated; bring a sampling --model-config to get a distribution.
+#
+#   bash job_scripts/intention/persona.sh \
+#       --backend qwen7b --mode blind --assignment-json /path/to/assignment.json \
+#       --model-config /path/to/sampling_model_config.json --submit
+#
 # Watch what --trials does to job length: --answers-per-job counts persona x clip
 # answers and knows nothing about it, so a 25-answer pack at --trials 50 is 1,250
 # generations. --time raises the worker's walltime for exactly that case.
@@ -102,7 +112,9 @@ usage() {
     echo "      (--assignment-json PATH | --task-spec PATH) [options]" >&2
     echo "Options:" >&2
     echo "  --backend NAME          Required. Known: $(intention_known_backends | tr '\n' ' ')" >&2
-    echo "  --mode NAME             fa | sa | pa. Default: ${mode}" >&2
+    echo "  --mode NAME             fa | sa | pa | blind. Default: ${mode}" >&2
+    echo "                          blind sends no media; it accepts any assignment" >&2
+    echo "                          and asks its own prompt, not the default one." >&2
     echo "  --assignment-json PATH  Balanced persona-to-clip design" >&2
     echo "  --task-spec PATH        Externally provided persona task specification" >&2
     echo "  --answers-per-job N     Maximum persona x clip answers packed into one job" >&2
@@ -259,6 +271,13 @@ if [[ "${no_instruction_prompt}" == "1" ]]; then
     fi
     instruction_prompt=""
 fi
+# blind asks its own prompt config's question: the baseline says "watch and
+# listen", and a blind turn has nothing to watch. Mirrors
+# BaseTaskMode.uses_default_instruction_prompt in the Python side. An explicitly
+# passed prompt is kept, and the preflight below checks it for media markers.
+if [[ "${mode}" == "blind" && "${instruction_prompt}" == "${INTENTION_DEFAULT_INSTRUCTION_PROMPT}" ]]; then
+    instruction_prompt=""
+fi
 if [[ -n "${instruction_prompt}" ]]; then
     if [[ ! -f "${instruction_prompt}" ]]; then
         echo "[ERROR] Instruction prompt not found: ${instruction_prompt}" >&2
@@ -341,7 +360,10 @@ if (( ${#chunk_selector_starts[@]} == 0 )); then
     echo "[ERROR] Persona source selected no runs: ${source_path}" >&2
     exit 1
 fi
-if [[ -n "${source_mode}" && "${source_mode}" != "${mode}" ]]; then
+# blind takes any design: it needs a subset of what every mode needs, and
+# reusing the media mode's design is what makes it a control -- same personas,
+# same clips, only the media withheld.
+if [[ -n "${source_mode}" && "${source_mode}" != "${mode}" && "${mode}" != "blind" ]]; then
     echo "[ERROR] --mode ${mode} does not match assignment mode ${source_mode}." >&2
     echo "        Rebuild the assignment for ${mode}, or submit with --mode ${source_mode}." >&2
     exit 1
