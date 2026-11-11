@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name="qwen25-probe"
 #SBATCH --time=01:00:00
-#SBATCH --partition=ewi-insy,all
+#SBATCH --account=daic-eemcs-insy-prb
+#SBATCH --partition=all
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64GB

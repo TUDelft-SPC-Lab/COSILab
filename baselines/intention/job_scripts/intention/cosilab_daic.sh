@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name="intention"
 #SBATCH --time=10:00:00
-#SBATCH --partition=ewi-insy,all
+#SBATCH --account=daic-eemcs-insy-prb
+#SBATCH --partition=all
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem-per-cpu=8GB
