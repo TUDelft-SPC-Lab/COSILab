@@ -14,13 +14,17 @@
 
 # Where the clip media lives. The two annotation_* folders below hang off it.
 INTENTION_DATA_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/4TU_upload/processed/benchmark_tasks/benchmark_1"
-INTENTION_PIPELINE_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline"
+# Every other input -- manifest, personas, participant images, prompts -- lives
+# beside the media.
+INTENTION_PIPELINE_ROOT="${INTENTION_DATA_ROOT}"
+# Everything this pipeline writes, kept apart from the inputs.
+INTENTION_RESULTS_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline"
 
 INTENTION_VIDEO_MEDIA_PATH_PREFIX="https://covfee.ewi.tudelft.nl/P8wPkLamHiAMOvb29g9h3AFy8tXACT1e/video_segs"
 INTENTION_AUDIO_MEDIA_PATH_PREFIX="https://covfee.ewi.tudelft.nl/P8wPkLamHiAMOvb29g9h3AFy8tXACT1e/audio_segs_normalized"
 
 INTENTION_INPUT_JSON="${INTENTION_PIPELINE_ROOT}/annotation_clips.json"
-INTENTION_OUTPUT_DIR="${INTENTION_PIPELINE_ROOT}/model_responses"
+INTENTION_OUTPUT_DIR="${INTENTION_RESULTS_ROOT}/model_responses"
 INTENTION_PARTICIPANT_IMAGE_ROOT="${INTENTION_PIPELINE_ROOT}/participant_imgs"
 
 # The persona experiment. persona_NNNN.txt files, the balanced design built from
@@ -30,7 +34,8 @@ INTENTION_PARTICIPANT_IMAGE_ROOT="${INTENTION_PIPELINE_ROOT}/participant_imgs"
 # persona.sh; nothing in this repo writes the task spec -- it arrives from the
 # annotation pipeline and is read by persona.sh too.
 INTENTION_PERSONA_DIR="${INTENTION_PIPELINE_ROOT}/persona_prompts"
-INTENTION_ASSIGNMENT_JSON="${INTENTION_PIPELINE_ROOT}/ingroup_assignment.json"
+# Written by build_assignment_daic.sh, so it lives with the results.
+INTENTION_ASSIGNMENT_JSON="${INTENTION_RESULTS_ROOT}/ingroup_assignment.json"
 INTENTION_TASK_SPEC_JSON="${INTENTION_PIPELINE_ROOT}/personas_prolific_ids.json"
 
 # The prompt structure-and-phrasing experiment. An instruction prompt is one
@@ -51,7 +56,7 @@ INTENTION_DEFAULT_INSTRUCTION_PROMPT="${INTENTION_INSTRUCTION_PROMPT_DIR}/prompt
 # here, which is what makes "the same clips and personas for every model"
 # something enforced rather than hoped for -- see build_sweep.py, which rebuilds
 # the spec on each submission and refuses when the rebuild would differ.
-INTENTION_SWEEP_DIR="${INTENTION_PIPELINE_ROOT}/sweeps"
+INTENTION_SWEEP_DIR="${INTENTION_RESULTS_ROOT}/sweeps"
 
 # The HF cache is a write target, so it is here rather than inlined: a job that
 # cannot write it re-downloads weights it already has.

@@ -45,7 +45,7 @@ from .runs import NothingToDo, RunContext, select_run_plan
 # question is asked is exactly what a mode is.
 DEFAULT_MODEL_CONFIG_PATH = Path(__file__).resolve().with_name("model_config.json")
 DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
-    "/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline/participant_imgs"
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/4TU_upload/processed/benchmark_tasks/benchmark_1/participant_imgs"
 )
 # The baseline wording every other instruction prompt is measured against. A
 # default rather than a required flag because the experiment varies this, so a
@@ -53,7 +53,7 @@ DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
 # job_scripts/lib/intention_paths.sh as INTENTION_DEFAULT_INSTRUCTION_PROMPT, the
 # same way DEFAULT_PARTICIPANT_IMAGE_ROOT above is doubled there.
 DEFAULT_INSTRUCTION_PROMPT = Path(
-    "/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline"
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/4TU_upload/processed/benchmark_tasks/benchmark_1"
     "/prompt_structure_and_phrasing_variants/prompt_original_revised.txt"
 )
 
