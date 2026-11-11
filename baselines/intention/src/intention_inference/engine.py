@@ -150,9 +150,11 @@ def run_inference_pass(
 
     for processed_index, item in enumerate(records, start=1):
         trial_label = "" if trials == 1 else f" x{trials}"
+        # blind resolves no video, so there is no file to name.
+        video_label = Path(item["video_path"]).name if item["video_path"] else "<no media>"
         print(
             f"[{processed_index}/{total_records}] "
-            f"{item['record_id']} -> {Path(item['video_path']).name}{trial_label}",
+            f"{item['record_id']} -> {video_label}{trial_label}",
             flush=True,
         )
 

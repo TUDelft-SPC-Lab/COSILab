@@ -7,11 +7,9 @@ pay for N identical prompts and file the draws under N clip ids that mean
 nothing. This writes the shape the question actually has instead: one task per
 persona, ONE clip each, and the repeats come from ``--trials`` on that clip.
 
-The clip is still needed, though never shown -- the worker resolves a record to
-build a row, and a clip whose video is missing is skipped, which here would cost
-the persona every one of its trials. So the first clip in the persona's own list
-whose video resolves is the one kept, checked with the same resolver inference
-uses. A persona with no such clip is dropped and reported, not run empty.
+The clip is never shown and its media is never looked for (modes/blind.py); it
+only supplies the record id the rows are filed under. So the first clip in the
+persona's own list that the manifest gives an id is the one kept.
 
 Persona text is always inlined. A spec's paths are resolved inside the worker's
 container, where only /tudelft.net keeps its host path; text cannot go stale.
@@ -43,7 +41,6 @@ from intention_inference.build_sweep import (  # noqa: E402
     build_sampling_model_config,
 )
 from intention_inference.manifest import get_nested_value, load_manifest_records  # noqa: E402
-from intention_inference.records import RecordContext, resolve_video_media  # noqa: E402
 from intention_inference.runs.assignment import load_assignment  # noqa: E402
 from intention_inference.runs.spec import build_record_index_by_id, load_task_spec  # noqa: E402
 
@@ -60,35 +57,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input-json", type=Path, required=True, help="Clip manifest.")
     parser.add_argument("--id-key", default="id")
-    parser.add_argument("--video-media-path-prefix", required=True)
-    parser.add_argument("--video-local-path-prefix", type=Path, required=True)
     parser.add_argument("--base-model-config", type=Path, default=DEFAULT_MODEL_CONFIG_PATH)
     parser.add_argument("--temperature", type=float, required=True)
     parser.add_argument("--trials", type=int, required=True, help="Recorded in the spec only.")
     parser.add_argument("--spec-output", type=Path, required=True)
     parser.add_argument("--model-config-output", type=Path, required=True)
     return parser.parse_args()
-
-
-def video_context(args: argparse.Namespace) -> RecordContext:
-    """Enough of a RecordContext for resolve_video_media; the rest is unused."""
-    return RecordContext(
-        id_key=args.id_key,
-        manifest_dir=args.input_json.resolve().parent,
-        media_root=None,
-        media_path_prefix=None,
-        local_path_prefix=None,
-        video_media_path_prefix=args.video_media_path_prefix,
-        video_local_path_prefix=args.video_local_path_prefix,
-        audio_media_path_prefix=None,
-        audio_local_path_prefix=None,
-        participant_image_root=Path("/nonexistent"),
-        no_audio=True,
-        aggregated_audio_dir=Path("/nonexistent"),
-        exclude_video_substrings=[],
-        exclude_audio_substrings=[],
-        user_prompt_template="",
-    )
 
 
 def assignment_personas(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -140,18 +114,18 @@ def spec_personas(
     return personas
 
 
-def first_usable_clip_id(
+def first_clip_id(
     clip_indices: list[int],
     records: list[dict[str, Any]],
-    ctx: RecordContext,
+    id_key: str,
 ) -> str | None:
     for record_index in clip_indices:
-        record = records[record_index]
-        record_id = get_nested_value(record, ctx.id_key)
-        if record_id is None:
-            continue
-        _, skip_reason = resolve_video_media(record, ctx)
-        if skip_reason is None:
+        if not 0 <= record_index < len(records):
+            raise IndexError(
+                f"Clip index {record_index} is outside the manifest ({len(records)} records)."
+            )
+        record_id = get_nested_value(records[record_index], id_key)
+        if record_id is not None:
             return str(record_id)
     return None
 
@@ -176,12 +150,11 @@ def main() -> None:
         source = args.task_spec.resolve()
         personas = spec_personas(args, records)
 
-    ctx = video_context(args)
     tasks: list[dict[str, Any]] = []
     dropped: list[str] = []
     prompt_configs_dropped: list[str] = []
     for persona in personas:
-        clip_id = first_usable_clip_id(persona["clip_indices"], records, ctx)
+        clip_id = first_clip_id(persona["clip_indices"], records, args.id_key)
         if clip_id is None:
             dropped.append(persona["task_id"])
             continue
@@ -197,8 +170,8 @@ def main() -> None:
 
     if dropped:
         print(
-            f"[WARN] {len(dropped)} persona(s) have no clip whose video resolves and are "
-            f"not run: {dropped[:10]}{' ...' if len(dropped) > 10 else ''}",
+            f"[WARN] {len(dropped)} persona(s) have no clip with an {args.id_key!r} in the "
+            f"manifest and are not run: {dropped[:10]}{' ...' if len(dropped) > 10 else ''}",
             file=sys.stderr,
         )
     if prompt_configs_dropped:
@@ -208,7 +181,7 @@ def main() -> None:
             file=sys.stderr,
         )
     if not tasks:
-        raise ValueError(f"No persona in {source} has a usable clip; nothing to run.")
+        raise ValueError(f"No persona in {source} has an addressable clip; nothing to run.")
 
     model_config = build_sampling_model_config(
         base_path=args.base_model_config.resolve(),

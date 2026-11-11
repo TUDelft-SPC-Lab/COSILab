@@ -13,8 +13,8 @@
 # environments, so nothing in this file is environment-specific.
 
 # Where the clip media lives. The two annotation_* folders below hang off it.
-INTENTION_DATA_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_1"
-INTENTION_PIPELINE_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline"
+INTENTION_DATA_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/4TU_upload/processed/benchmark_tasks/benchmark_1"
+INTENTION_PIPELINE_ROOT="/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline"
 
 INTENTION_VIDEO_MEDIA_PATH_PREFIX="https://covfee.ewi.tudelft.nl/P8wPkLamHiAMOvb29g9h3AFy8tXACT1e/video_segs"
 INTENTION_AUDIO_MEDIA_PATH_PREFIX="https://covfee.ewi.tudelft.nl/P8wPkLamHiAMOvb29g9h3AFy8tXACT1e/audio_segs_normalized"

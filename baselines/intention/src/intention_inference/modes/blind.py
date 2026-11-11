@@ -13,10 +13,10 @@ Two consequences worth knowing before reading results:
     turn. Under the packaged do_sample=false that is one answer copied N times.
     job_scripts/intention/persona_blind.sh therefore runs one clip per persona
     with sampling on and --trials for the distribution.
-  * The clip is still resolved, though never shown. That keeps the retained
-    clip set identical to the media modes' -- a clip missing from the share is
-    skipped here exactly as it is there -- and keeps the video path columns in
-    the result rows, so blind rows join to pa/fa rows on the same keys.
+  * No media is touched, not even checked for: a clip's video need not exist
+    on this filesystem. The record only supplies the id and participant the
+    row is filed under, so blind rows join to pa/fa rows on record_id. The
+    video path columns carry the manifest's own URL and nothing resolved.
 
 Any assignment built for another mode is valid here: blind needs a subset of
 what every mode needs. persona_blind.sh accepts one accordingly.
@@ -30,7 +30,7 @@ from typing import Any
 
 from models.base import ChatMessage
 
-from ..records import RecordContext, resolve_video_media
+from ..records import RecordContext
 from .base import BaseTaskMode
 
 __all__ = ["BlindMode"]
@@ -54,17 +54,16 @@ class BlindMode(BaseTaskMode):
         ctx: RecordContext,
     ) -> tuple[dict[str, Any] | None, str | None]:
         # Overridden rather than inherited: the default composition resolves the
-        # audio bundle, which for pa *writes* a conversation-floor mix per clip.
-        # Paying for that, and skipping clips whose audio is missing, would make
-        # a condition that uses no audio depend on it.
-        video_fields, skip_reason = resolve_video_media(record, ctx)
-        if skip_reason is not None:
-            return None, skip_reason
-
+        # video and the audio bundle, which for pa *writes* a conversation-floor
+        # mix per clip. Skipping clips whose media is missing would make a
+        # condition that uses no media depend on it.
+        source_video_path = record.get("video")
         item: dict[str, Any] = {
             "record_index": record_index,
             "record_id": str(record_id),
-            **video_fields,
+            "source_video_path": None if source_video_path is None else str(source_video_path),
+            "rewritten_video_path": None,
+            "video_path": None,
             "source_record": record,
         }
         item["user_prompt"] = self.render_user_prompt(

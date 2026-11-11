@@ -23,8 +23,9 @@
 #       --backend qwen7b --assignment-json /path/to/assignment.json --submit
 #
 # From the source it derives, into the results directory, the blind spec (each
-# persona with the first of its clips whose video resolves) and a sampling model
-# config -- see intention_inference/build_blind_spec.py. Dry run is the default;
+# persona with the first of its clips, used only as a record id -- no media is
+# read or checked) and a sampling model config -- see
+# intention_inference/build_blind_spec.py. Dry run is the default;
 # rerunning resumes, skipping packs whose persona outputs all exist.
 
 set -euo pipefail
@@ -163,8 +164,6 @@ fi
 builder_args=(
     python3 -m intention_inference.build_blind_spec
     --input-json "${input_json}"
-    --video-media-path-prefix "${INTENTION_VIDEO_MEDIA_PATH_PREFIX}"
-    --video-local-path-prefix "${INTENTION_VIDEO_LOCAL_PATH_PREFIX}"
     --temperature "${TEMPERATURE}"
     --trials "${TRIALS}"
 )

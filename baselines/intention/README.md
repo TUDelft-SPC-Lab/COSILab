@@ -110,7 +110,7 @@ Each mode ships its own prompt config, and `--prompt-config` overrides it. A pro
 - `system_prompt`: the system instruction, folded into the user text
 - `user_prompt_template`: the actual intention-recognition prompt
 
-On top of that, every run reads an **instruction prompt**: a plain text file holding one whole `user_prompt_template`, which replaces that key in every prompt config the run resolves (the mode's own, a `--prompt-config`, and any per-task config in a `--task-spec`). It is the axis varied by the prompt-variation sweep. `--instruction-prompt PATH` selects the file; its default is the DAIC baseline `/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/prompt_structure_and_phrasing_variants/prompt_original_revised.txt`, and a missing file is an error at startup. `--no-instruction-prompt` skips the replacement and uses the prompt config's own template. Under `fa`, a prompt that carries PA's `<image>`/`<audio1>`/`<audio2>` markers or describes an aggregated track is refused (see `instruction_prompt.py`), and only the closing block is replaced -- the other `fa` fragments keep `prompt_fa.json`'s wording.
+On top of that, every run reads an **instruction prompt**: a plain text file holding one whole `user_prompt_template`, which replaces that key in every prompt config the run resolves (the mode's own, a `--prompt-config`, and any per-task config in a `--task-spec`). It is the axis varied by the prompt-variation sweep. `--instruction-prompt PATH` selects the file; its default is the DAIC baseline `/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline/prompt_structure_and_phrasing_variants/prompt_original_revised.txt`, and a missing file is an error at startup. `--no-instruction-prompt` skips the replacement and uses the prompt config's own template. Under `fa`, a prompt that carries PA's `<image>`/`<audio1>`/`<audio2>` markers or describes an aggregated track is refused (see `instruction_prompt.py`), and only the closing block is replaced -- the other `fa` fragments keep `prompt_fa.json`'s wording.
 
 If `user_prompt_template` (or `prompt`) is absent, the loader assembles the template from structured `intro`, `questions`, and `examples` fields. Templates are rendered with the record's flattened fields, so `{field}` and `{nested.field}` placeholders are filled from the record, `{record_json}` expands to the whole record, and unknown placeholders are left untouched.
 
@@ -361,9 +361,9 @@ Default DAIC paths (`lib/intention_paths.sh` and `lib/model_backends.sh`):
 
 ```text
 PROJECT_ROOT   /home/zli33/linuxhome/projects/COSILab
-DATA_ROOT      /tudelft.net/staff-umbrella/neon/cosilab_project/data_clean/processed/benchmark_tasks/benchmark_1
-input_json     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/annotation_clips.json
-output_dir     /tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/model_responses/<backend>/<mode>
+DATA_ROOT      /tudelft.net/staff-umbrella/neon/cosilab_project/4TU_upload/processed/benchmark_tasks/benchmark_1
+input_json     /tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline/annotation_clips.json
+output_dir     /tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline/model_responses/<backend>/<mode>
 gemma        SIF  /tudelft.net/staff-umbrella/neon/apptainer/gemma.sif
 qwen3b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif
 qwen7b       SIF  /tudelft.net/staff-umbrella/neon/apptainer/qwen2.5-omni-inference.sif

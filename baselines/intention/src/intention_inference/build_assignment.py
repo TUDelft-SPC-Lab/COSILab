@@ -91,7 +91,7 @@ from intention_inference.records import (  # noqa: E402
 )
 
 DEFAULT_PARTICIPANT_IMAGE_ROOT = Path(
-    "/tudelft.net/staff-umbrella/neon/cosilab_project/B1_pipeline/participant_imgs"
+    "/tudelft.net/staff-umbrella/neon/cosilab_project/data_temp/B1_pipeline/participant_imgs"
 )
 
 
