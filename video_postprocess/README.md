@@ -270,6 +270,40 @@ Both columns correct for a camera's true framerate (e.g. 59.94 fps) against the 
 
 `CAMERA_TO_PROCESS` (see above) also limits this script to a single camera.
 
+### Segment Timecode CSV for a Cut Section
+
+Use:
+
+```text
+generate_segment_timecode_csv.py
+```
+
+This is for a section cut with `extract_segment_from_video.py --use-timecode` (e.g. the 35 min sections) and then split into consecutive fixed-length segments. It computes everything from the section's `--start-time` / `--end-time` alone and reads no video.
+
+Run:
+
+```bash
+uv run python -m video_postprocess.generate_segment_timecode_csv \
+  --start-time 13:46:00 \
+  --end-time 14:21:00 \
+  --output-csv /path/to/segment_timecodes.csv
+```
+
+The times are nominal 60 fps timecodes, the same values passed to `extract_segment_from_video.py`. The footage is really 59.94 fps (60000/1001), so the section holds `round(nominal_frames * 1000/1001)` physical frames: a 35 min section has 125874 frames, not 126000. These are split into segments of `--frames-per-segment` frames (18000 by default), and the last segment takes the remainder. For 35 min that is six segments of 18000 frames and one of 17874.
+
+The CSV has one row per frame:
+
+```text
+segment, frame, timecode
+1,       0,     13:46:00:00
+```
+
+- `segment` is the 1-based segment number.
+- `frame` is the 0-based frame index within that segment.
+- `timecode` is the nominal 60 fps `HH:MM:SS:FF` of that frame: frame `g` of the section is `round(g * 1001/1000)` nominal frames after `--start-time`. It is the value `--start-time --use-timecode` would need to land on that frame, and one `FF` value is skipped roughly every 1000 frames.
+
+When `extract_segment_from_video.py` locates the section start, it corrects for drift across the camera's earlier raw chunks (`physical_frames_before`). This script doesn't know about those chunks, so its timecodes can be off by ±1 frame from where the cut actually landed. For exact per-frame times of the raw chunks, use `generate_timestamps_csv.py` above.
+
 ## 5. Match Session Videos to Raw Frames
 
 Use:
@@ -609,6 +643,7 @@ video_postprocess/
   fix_gopro_battery_dies_video.py    # repair a truncated last chunk with untrunc
   cut_gopro_annotation_segments.py   # fixed 30-second GoPro annotation cuts
   batch_extract_segments.py          # predefined segment lists TIME_SEGS_1 / TIME_SEGS_2
+  generate_segment_timecode_csv.py   # segment/frame -> timecode CSV for a cut, split section
   match_session_video_to_raw.py      # raw start frame of the keypoint-pipeline session videos
   py.typed                           # optional typing marker, not needed at runtime
 ```
