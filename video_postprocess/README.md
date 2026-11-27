@@ -593,7 +593,7 @@ bash job_scripts/side_calib.sh 1
 bash job_scripts/side_calib.sh 2
 ```
 
-The script copies the old calibration frames, writes the side-camera timestamps, extracts and detects the dense frames, then runs `joint.py SESSION`. All outputs go to `video_postprocess/side_calib_work/` (gitignored); `/tudelft.net` is only read. Run the Python steps from `src/video_postprocess/camera_calibration/side_calib/`, because they import each other as plain modules. `joint.py SESSION --folds 0` runs the final fit only.
+The script copies the old calibration frames (top and side, from the side calibration folder's `calib_frames/`), writes the side-camera timestamps, extracts and detects the dense frames, then runs `joint.py SESSION`. All outputs go to `video_postprocess/side_calib_work/` (gitignored); `/tudelft.net` is only read. Run the Python steps from `src/video_postprocess/camera_calibration/side_calib/`, because they import each other as plain modules. `joint.py SESSION --folds 0` runs the final fit only.
 
 Outputs per session, in `side_calib_work/s{N}joint/`:
 
@@ -604,6 +604,13 @@ review.log      detections per camera, per-iteration fit statistics, pose change
 eval.log        held-out evaluation (table below)
 reviewed.json   every kept board: frame, pose, and per view the camera, corner order, source and error
 ```
+
+Delivered copies (2026-11-27). In both calibration folders the previous calibration was moved to `original/`, which the code reads as its starting point and reference:
+- **Top cameras:** `/tudelft.net/staff-umbrella/CosiLabExternal/4TU_upload/processed/videos/camera_calibration/idiap_params/`.
+- **Side cameras:** `/tudelft.net/staff-umbrella/neon/cosilab_project/processed_data/gopro_data/side_view_camera_calibration/idiap_params/`.
+- **Side-camera timestamp CSVs:** `/tudelft.net/staff-umbrella/neon/cosilab_project/raw_data/gopro_data/timestamps/`.
+
+The side extrinsics share a world frame with the new top extrinsics; don't combine them with the original top ones.
 
 The format is that of `idiap_params/` above: world-to-camera `rvec`/`tvec` in metres, in the world frame of the session's origin camera. Folder names follow the existing files: `camera-XX` for session 1 and `camera_XX` for session 2. The intrinsics are unchanged, so the existing `intrinsic.json` files still apply.
 

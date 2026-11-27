@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from common import (SESSIONS, SIDE_CAL, WORK, board_world_points, compose, corner_orders, invert,
+from common import (SESSIONS, SIDE_CAL_ORIG, WORK, board_world_points, compose, corner_orders, invert,
                     load_session, pnp, pose_diff, project, reorder)
 from joint_fit import Problem, camera_pose_from_boards, fit_board_pose
 
@@ -52,7 +52,7 @@ def load_detections(session, use_old=True):
         for d in dets:
             idx[(d["cam"], d["frame"])].append(d)
         for proj in OLD_PROJECTS[session]:
-            p = json.loads((SIDE_CAL / "calibrator_projects" / proj).read_text())
+            p = json.loads((SIDE_CAL_ORIG / "calibrator_projects" / proj).read_text())
             files = p["fileInfo"]
             cams = [int(x["filePath"].split("/")[-2].split("_")[1].split("-")[0]) for x in files[0]]
             for det in p["detections"]:

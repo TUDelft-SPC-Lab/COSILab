@@ -9,6 +9,10 @@ ROOT = Path("/tudelft.net/staff-umbrella/neon/cosilab_project")
 TU4 = Path("/tudelft.net/staff-umbrella/CosiLabExternal/4TU_upload")  # moved from ROOT/4TU_upload (2026-11-26)
 SIDE_CAL = ROOT / "processed_data/gopro_data/side_view_camera_calibration"
 TOP_CAL = TU4 / "processed/videos/camera_calibration"
+# The original (Calibrator) calibration, superseded by the joint recalibration on 2026-11-27 and moved to original/.
+# It is the starting point of the fit and the "4TU/stored" reference of the evaluation. Intrinsics are unchanged.
+SIDE_CAL_ORIG = SIDE_CAL / "original"
+TOP_CAL_ORIG = TOP_CAL / "original"
 WORK = Path(__file__).resolve().parents[4] / "side_calib_work"
 
 SESSIONS = {
@@ -38,9 +42,9 @@ def ext_dirname(session, cam):
 def load_extrinsics(session, cam):
     """World->camera (rvec, tvec); None if the camera has no extrinsics (cam05)."""
     if cam < 11:
-        p = TOP_CAL / f"idiap_params/mingling_{session}_top" / ext_dirname(session, cam) / "extrinsic.json"
+        p = TOP_CAL_ORIG / f"idiap_params/mingling_{session}_top" / ext_dirname(session, cam) / "extrinsic.json"
     else:
-        p = SIDE_CAL / f"idiap_params/mingling_{session}_side" / ext_dirname(session, cam) / "extrinsic.json"
+        p = SIDE_CAL_ORIG / f"idiap_params/mingling_{session}_side" / ext_dirname(session, cam) / "extrinsic.json"
     if not p.exists():
         return None
     d = json.loads(p.read_text())

@@ -20,9 +20,8 @@ mkdir -p "$W/frames/s$S"
 
 # 1. Old calibration frames (used next to the dense ones), copied once from the read-only share.
 CAL=/tudelft.net/staff-umbrella/neon/cosilab_project/processed_data/gopro_data/side_view_camera_calibration
-TU4=/tudelft.net/staff-umbrella/CosiLabExternal/4TU_upload
 rsync -a "$CAL/calib_frames/side_view_camera-mingle_session_$S/" "$W/frames/s$S/"
-rsync -a "$TU4/processed/videos/camera_calibration/calib_frames/top_view_camera-mingle_session_$S/" "$W/frames/s$S/"
+rsync -a "$CAL/calib_frames/top_view_camera-mingle_session_$S/" "$W/frames/s$S/"
 [ -f "$W/detections_s$S.npz" ] || python3 detect_multi.py "$S" --workers 30 | tee "$W/detect_s$S.log"
 
 # 2. Side-camera timestamps from the raw timecode tags (the 4TU rule); the check must report 0 differing rows.
