@@ -6,6 +6,7 @@ This folder contains utilities for GoPro-style video postprocessing. The core fu
 2. Split a requested interval of the raw per-camera video chunks into numbered frame images.
 3. Generate a per-frame real-time timestamp CSV for every raw per-camera video chunk.
 4. Find the raw frame each keypoint-pipeline session video starts at, so its frames can be given world-clock times.
+5. Recalibrate the extrinsics of all top and side cameras of a session from every calibration board in dense, world-synchronized frames ([section 6](#joint-recalibration-with-every-board-camera_calibrationside_calib)).
 
 Segment cutting, frame splitting, and timestamp generation all correct for cameras that record at a true rate (e.g. 59.94 fps) slightly off from the nominal 60 fps clock that timecodes and requested times are expressed against, so multi-file, multi-hour recordings stay frame-accurate.
 
@@ -547,6 +548,93 @@ uv run python -m video_postprocess.camera_calibration.show_calib_v2 /path/to/cam
 ```
 
 where `/path/to/camera_params` is an IDIAP output directory from Step 3 (one subfolder per camera, each with `extrinsic.json`). Several such directories can be passed at once.
+
+### Joint Recalibration With Every Board (`camera_calibration/side_calib/`)
+
+The original extrinsics came from Calibrator projects with very few board views. `detect_checkerboard.py` finds only one board per image, while 2–3 boards are usually visible, and frames where different boards would be matched had to be discarded by hand.
+- **Session 2:** the 4TU top calibration (every 120th frame) has 8–11 board detections per camera, only 2 of them for cam04. cam04 was about 5° off and cam03 about 3°.
+- **Side cameras:** 12–15 were calibrated in separate 3-camera projects. Cams 12/14 were chained through one top camera (cam10 or cam04) and inherited its error.
+
+The recalibration replaces this with one bundle adjustment per session over every board in dense, world-synchronized frames. The world-origin camera stays at its 4TU pose; all other top and side cameras are solved together. Intrinsics are not changed.
+
+| session | fixed (world origin) | solved |
+|---|---|---|
+| 1 | cam06 | cams 07–10, 12–15 |
+| 2 | cam01 | cams 02–04, 12–15 (cam05 is never used: its time sync is bad) |
+
+Pipeline:
+
+1. **Dense frames** (`extract_dense.py`)
+   - Takes every 10th world tick (1/6 s) of the calibration window, decoded from the raw GoPro files: 1598 frames per camera for session 1, 998 for session 2.
+   - World time comes from the raw MP4 timecode tags with the 4TU rule. It never comes from the `timecode_fixed` videos, which have wrong timecodes.
+   - Top cameras use the 4TU `processed/videos/timestamps` CSVs. Side cameras use `timestamps.py`, which applies the same rule. `timestamps.py --check` reproduces all 4TU rows of the top cameras exactly.
+   - Every frame is within 1 tick of its grid time.
+2. **Board detection** (`detect_multi.py`)
+   - Runs the same detector as `detect_checkerboard.py`: `findChessboardCorners(5,3)` followed by `cornerSubPix`.
+   - Each image is searched in 4 versions: plain, CLAHE, 2× upscaled, and both. After each hit the board is masked and the search repeated, up to 4 boards per image.
+   - The old calibration frames (`calib_frames/`, every 30th/60th frame) and the old Calibrator corners are added too.
+3. **Automatic review and joint fit** (`auto_review.py`, `joint_fit.py`, driven by `joint.py`). This replaces the manual rotate/discard pass of `show_saved_detections.py`.
+   - **Board poses:** each frame's boards are seeded from the top cameras by PnP and merged across top views.
+   - **Matching:** side detections are assigned by Hungarian matching on projected corners, over the 4 corner orders (the "rotate").
+   - **Discards:** detections without a consistent partner are dropped (the "discard").
+   - **Fit:** a sparse `least_squares` (soft-L1 loss) solves all free camera poses and all board poses, with fisheye reprojection of the 15 corners.
+   - **Iterations:** review and fit alternate 4 times, with the gates tightening: side 150 → 25 px, top 60 → 6 px. Views above 30 → 5 px are dropped.
+4. **Evaluation** (`joint.py`)
+   - The dense frames are split into 5 contiguous blocks, plus the old frames from the same moments. Each block is held out in turn.
+   - Every held-out board is posed from its other views and projected into the remaining camera, with the 4TU/stored poses and with the fold's poses.
+   - The delivered extrinsics come from one final fit on all data.
+
+`test_synthetic.py` checks the review and the fit on synthetic boards seen by the real cameras, including flips, fake boards and perturbed starting poses. It recovers the poses to within 1 mm and 0.02°.
+
+Run one session end to end (about 3–4 h for session 1 and 2–3 h for session 2 on 32 cores, mostly detection):
+
+```bash
+bash job_scripts/side_calib.sh 1
+bash job_scripts/side_calib.sh 2
+```
+
+The script copies the old calibration frames, writes the side-camera timestamps, extracts and detects the dense frames, then runs `joint.py SESSION`. All outputs go to `video_postprocess/side_calib_work/` (gitignored); `/tudelft.net` is only read. Run the Python steps from `src/video_postprocess/camera_calibration/side_calib/`, because they import each other as plain modules. `joint.py SESSION --folds 0` runs the final fit only.
+
+Outputs per session, in `side_calib_work/s{N}joint/`:
+
+```text
+idiap_params/mingling_N_top/camera?XX/extrinsic.json    new top extrinsics (not the fixed origin camera)
+idiap_params/mingling_N_side/camera?XX/extrinsic.json   new side extrinsics (12-15)
+review.log      detections per camera, per-iteration fit statistics, pose change per camera
+eval.log        held-out evaluation (table below)
+reviewed.json   every kept board: frame, pose, and per view the camera, corner order, source and error
+```
+
+The format is that of `idiap_params/` above: world-to-camera `rvec`/`tvec` in metres, in the world frame of the session's origin camera. Folder names follow the existing files: `camera-XX` for session 1 and `camera_XX` for session 2. The intrinsics are unchanged, so the existing `intrinsic.json` files still apply.
+
+Held-out results: median (p90) mean corner error in px, on boards left out of the fit. The final fits reach 0.6–1.8 px median per camera, and the 5 fold poses agree with the final poses within 1.4 cm / 0.23° (session 1) and 5 cm / 0.63° (session 2).
+
+| session 1 | 4TU / stored | new | pose change |
+|---|---|---|---|
+| cam06 | 2.7 (6.2) | 2.0 (4.6) | fixed |
+| cam07 | 2.5 (8.7) | 1.4 (4.6) | 1.8 cm, 0.46° |
+| cam08 | 3.8 (12.7) | 1.9 (5.5) | 3.0 cm, 0.65° |
+| cam09 | 5.9 (12.9) | 3.0 (6.7) | 4.0 cm, 0.62° |
+| cam10 | 9.3 (23.3) | 4.5 (10.4) | 5.6 cm, 1.34° |
+| cam12 | 4.6 (17.7) | 2.3 (7.6) | 8.0 cm, 1.12° |
+| cam13 | 8.8 (17.8) | 2.8 (7.2) | 5.9 cm, 1.20° |
+| cam14 | 8.2 (21.1) | 2.9 (7.2) | 9.3 cm, 1.13° |
+| cam15 | 15.9 (30.1) | 2.2 (7.9) | 17.9 cm, 2.50° |
+
+| session 2 | 4TU / stored | new | pose change |
+|---|---|---|---|
+| cam01 | 3.7 (17.6) | 3.2 (11.6) | fixed |
+| cam02 | 8.2 (38.6) | 3.3 (9.5) | 4.4 cm, 0.84° |
+| cam03 | 28.4 (57.2) | 5.4 (12.3) | 11.2 cm, 2.87° |
+| cam04 | 46.1 (70.6) | 5.9 (14.4) | 16.6 cm, 4.95° |
+| cam12 | 7.2 (24.4) | 3.1 (7.8) | 35.0 cm, 4.98° |
+| cam13 | 8.3 (39.5) | 4.7 (10.7) | 4.5 cm, 0.73° |
+| cam14 | 5.3 (27.8) | 3.1 (10.4) | 52.9 cm, 5.30° |
+| cam15 | 8.9 (33.3) | 3.3 (8.1) | 2.7 cm, 0.42° |
+
+The session 2 cams 12/14 move about 5° with cam04: they had been calibrated relative to cam04. With the new poses the session 2 layout is regular:
+- cams 01–04 lie on one line within 1 cm, about 1 m apart.
+- Three side cameras sit on a rectangle aligned with that line.
 
 ## 7. Submit on the Cluster
 
