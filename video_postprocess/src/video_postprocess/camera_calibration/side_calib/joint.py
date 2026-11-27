@@ -62,7 +62,7 @@ def run_fit(dets, log, exclude=()):
 def save(cams, boards, dets, err, out):
     out.mkdir(parents=True, exist_ok=True)
     for c in CFG[S]["free_top"] + SIDE:
-        kind = "top" if c < 10 else "side"
+        kind = "top" if c < 11 else "side"
         d = out / "idiap_params" / f"mingling_{S}_{kind}" / f"camera{SESSIONS[S]['sep']}{c:02d}"
         d.mkdir(parents=True, exist_ok=True)
         (d / "extrinsic.json").write_text(json.dumps(
