@@ -37,3 +37,4 @@ venv.bak/
 .cursorindexingignore
 
 **.sif
+video_postprocess/side_calib_work/
